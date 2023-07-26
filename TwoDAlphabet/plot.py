@@ -789,9 +789,12 @@ def make_systematic_plots(twoD):
         for axis in ['X','Y']:
             nominal = getattr(nominal_full,'Projection'+axis)('%s_%s_%s_%s'%(p,r,'nom','proj'+axis))
             for s in twoD.ledger.GetShapeSystematics(drop_norms=True):
-                up = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Up'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Up','proj'+axis))
-                down = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Down'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Down','proj'+axis))
-
+                try:
+                    up = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Up'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Up','proj'+axis))
+                    down = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Down'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Down','proj'+axis))
+                except:
+                    print("Skipping systematic {0} for process {1} (region {2})".format(s,p,r))
+                    continue
                 c.cd()
                 nominal.SetLineColor(ROOT.kBlack)
                 nominal.SetFillColor(ROOT.kYellow-9)
