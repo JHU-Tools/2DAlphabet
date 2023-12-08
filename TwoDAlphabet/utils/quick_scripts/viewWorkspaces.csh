@@ -1,0 +1,2 @@
+python -c 'import header; header.printWorkspace("MaxLikelihoodFitResult.root","MaxLikelihoodFitResult")' > MaxLikelihoodFit.txt
+python -c 'import header; header.printWorkspace("QCDMCwTT/base_QCDMCwTT.root","w_2D")' > base.txt

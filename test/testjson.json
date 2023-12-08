@@ -1,0 +1,13 @@
+{
+    "NAME": "bare",
+    "this": "is",
+    "a" : {
+        "test": 1,
+        "dictionary": false
+    },
+    "OPTIONS": {},
+    "GLOBAL": {},
+    "REGIONS": {},
+    "PROCESSES": {},
+    "SYSTEMATICS": {}
+}

@@ -1,0 +1,80 @@
+{
+  "NAME": "HWW",
+  "PROCESSES": {
+    "data_obs": {
+      "SYSTEMATICS":[],
+      "SCALE": 1.0,
+      "COLOR": 1,
+      "TYPE": "DATA",
+      "comment": "for now, we are just using 2018 samples & bkg sim, so just use Data_18 - not Data_Run2",
+      "ALIAS": "Data_18",
+      "TITLE": "Data",
+      "LOC": "path/FILE:HIST"
+    },
+    "SIGNAME": {
+      "SYSTEMATICS":["lumi"],
+      "SCALE": 1.0,
+      "COLOR": 1,
+      "TYPE": "SIGNAL",
+      "TITLE": "m_{X} = 2000, m_{Y} = 800 (GeV)",
+      "LOC":"path/FILE:HIST"
+    }
+  },
+
+  "REGIONS": {
+    "CR_fail": {
+      "PROCESSES": ["SIGNAME"],
+      "BINNING": "default"
+    },
+    "CR_loose": {
+      "PROCESSES": ["SIGNAME"],
+      "BINNING": "default"
+    },
+    "CR_pass": {
+      "PROCESSES": ["SIGNAME"],
+      "BINNING": "default"
+    }
+  },
+
+  "GLOBAL": {
+    "FILE": "XHYbbWWselection_$process.root",
+    "HIST": "MXvMY_particleNet_$region__nominal",
+    "path": "/uscms_data/d3/ammitra/XHYbbWW_analysis/CMSSW_11_1_4/src/XHYbbWW_backup/rootfiles/",
+    "SIGNAME": ["MX_2000_MY_800_18","MX_1300_MY_200_18","MX_1500_MY_400_18","MX_2000_MY_400_18","MX_3000_MY_800_18"]
+  },
+
+  "BINNING": {
+    "default": {
+      "X": {
+        "NAME": "hww",
+        "TITLE": "m_{X} (GeV)",
+        "MIN": 700,
+        "MAX": 3500,
+        "NBINS": 16,
+        "SIGSTART": 1400,
+        "SIGEND": 2275
+      },
+      "Y": {
+        "NAME": "ww",
+        "TITLE": "m_{Y} (GeV)",
+        "MIN": 175,
+        "MAX": 2800,
+        "NBINS": 15
+      }
+    }
+  },
+
+  "SYSTEMATICS": {
+    "lumi": {
+      "CODE": 0,
+      "VAL": 1.016
+    }
+  },
+
+  "OPTIONS": {
+    "plotPrefitSigInFitB": true,
+    "plotUncerts": false,
+    "plotTitles": false,
+    "year": 1
+  }
+}

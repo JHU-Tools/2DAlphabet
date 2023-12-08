@@ -1,0 +1,11 @@
+*.pyc
+.pytest_cache/
+sphinx_docs/build
+sphinx_docs/source/doctrees/*
+coverage_html_report/
+cov.xml
+.coverage
+*.egg-info
+tests_unfinished
+.vscode/
+docs/

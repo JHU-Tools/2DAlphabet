@@ -1,0 +1,13 @@
+universe = vanilla
+environment = CONDOR_ID=$(Process)
+Executable = TEMPSCRIPT
+Should_Transfer_Files = YES
+WhenToTransferOutput = ON_EXIT
+Output = notneeded/output_$(Cluster)_$(Process).stdout
+Error = notneeded/output_$(Cluster)_$(Process).stderr
+Log = notneeded/output_$(Cluster)_$(Process).log
+transfer_input_files = TEMPTAR
+request_memory = 2000
+x509userproxy = $ENV(X509_USER_PROXY)
+Arguments = "$(args)"
+Queue args from TEMPARGS

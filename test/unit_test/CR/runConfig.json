@@ -1,0 +1,103 @@
+{
+  "BINNING": {
+    "HELP": "The binning of the x and y axes should be configured here", 
+    "X": {
+      "MAX": 260, 
+      "MIN": 60, 
+      "NAME": "xaxis", 
+      "NBINS": 10, 
+      "SIGEND": 140, 
+      "SIGSTART": 100, 
+      "TITLE": "X"
+    }, 
+    "Y": {
+      "MAX": 3000, 
+      "MIN": 800, 
+      "NAME": "yaxis", 
+      "NBINS": 22, 
+      "TITLE": "Y"
+    }
+  }, 
+  "GLOBAL": {
+    "FILE": "THselection_$process.root", 
+    "FILE_DOWN": "THselection_$process_$syst_down.root", 
+    "FILE_UP": "THselection_$process_$syst_up.root", 
+    "HIST": "MthvMh_particleNet_$region__nominal", 
+    "HIST_DOWN": "MthvMh_particleNet_$region__$syst_down", 
+    "HIST_UP": "MthvMh_particleNet_$region__$syst_up", 
+    "path": "test/data"
+  }, 
+  "NAME": "CR", 
+  "OPTIONS": {
+    "blindedFit": false, 
+    "blindedPlots": false, 
+    "freezeFail": true, 
+    "plotTitles": false, 
+    "plotUncerts": false, 
+    "year": 2
+  }, 
+  "PROCESSES": {
+    "Data_Run2": {
+      "ALIAS": "data_obs", 
+      "COLOR": 0, 
+      "LOC": "test/data/THselection_$process.root:MthvMh_particleNet_$region__nominal", 
+      "SCALE": 1.0, 
+      "SYSTEMATICS": [], 
+      "TYPE": "DATA"
+    }, 
+    "TprimeB-1800_16": {
+      "COLOR": 0, 
+      "LOC": "test/data/THselection_$process.root:MthvMh_particleNet_$region__nominal", 
+      "SCALE": 1.0, 
+      "SYSTEMATICS": [
+        "lumi", 
+        "JER"
+      ], 
+      "TYPE": "SIGNAL"
+    }, 
+    "ttbar_16": {
+      "COLOR": 2, 
+      "LOC": "test/data/THselection_$process.root:MthvMh_particleNet_$region__nominal", 
+      "SCALE": 1.0, 
+      "SYSTEMATICS": [
+        "lumi", 
+        "TT_xsec", 
+        "TptReweight"
+      ], 
+      "TYPE": "BKG"
+    }
+  }, 
+  "REGIONS": {
+    "CR_fail": [
+      "ttbar_16", 
+      "TprimeB-1800_16", 
+      "Data_Run2"
+    ], 
+    "CR_pass": [
+      "ttbar_16", 
+      "TprimeB-1800_16", 
+      "Data_Run2"
+    ]
+  }, 
+  "SYSTEMATICS": {
+    "JER": {
+      "ALIAS": "JER", 
+      "DOWN": "test/data/THselection_$process_$syst_down.root:MthvMh_particleNet_$region__nominal", 
+      "SIGMA": 1.0, 
+      "UP": "test/data/THselection_$process_$syst_up.root:MthvMh_particleNet_$region__nominal"
+    }, 
+    "TT_xsec": {
+      "VALDOWN": 0.8, 
+      "VALUP": 1.2
+    }, 
+    "TptReweight": {
+      "ALIAS": "Top3", 
+      "DOWN": "test/data/THselection_$process.root:MthvMh_particleNet_$region__$syst_down", 
+      "SIGMA": 1.0, 
+      "UP": "test/data/THselection_$process.root:MthvMh_particleNet_$region__$syst_up"
+    }, 
+    "lumi": {
+      "VAL": 1.018
+    }
+  }
+}
