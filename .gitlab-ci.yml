@@ -1,0 +1,14 @@
+test:
+  tags:
+    - cvmfs
+  only:
+    - master                    # master release branch
+    - develop                   # development branch 
+  before_script:
+    - set -o xtrace             # Print command before executing it
+    - set -o errexit            # make your script exit when a command fails.
+    - set -o pipefail           # exit status of the last command that threw a non-zero exit code is returned
+    - shopt -s expand_aliases   # CRUCIAL for cmsrel, etc as aliases not expanded in non-interactive shells
+  script:
+    # check CVMFS
+    - ls /cvmfs/cms.cern.ch/
