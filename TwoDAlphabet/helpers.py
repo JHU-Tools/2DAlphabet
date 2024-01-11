@@ -17,8 +17,14 @@ def open_json(f):
     Returns:
         dict: JSON opened as a python dictionary.
     '''
-    with open(f) as fInput_config:
-        input_config = json.load(fInput_config, object_hook=ascii_encode_dict)  # Converts most of the unicode to ascii
+    #If python3
+    import sys
+    if sys.version_info[0] >= 3:
+        with open(f) as fInput_config:
+            input_config = json.load(fInput_config)
+    else:
+        with open(f) as fInput_config:
+           input_config = json.load(fInput_config, object_hook=ascii_encode_dict)  # Converts most of the unicode to ascii
 
     return input_config
 

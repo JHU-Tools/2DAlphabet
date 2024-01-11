@@ -315,17 +315,17 @@ class TwoDAlphabet:
                 rMin=rMin, rMax=rMax,
                 setParams=setParams,
                 usePreviousFit=usePreviousFit,
-		defMinStrat=defMinStrat,
+        defMinStrat=defMinStrat,
                 extra=extra)
             make_postfit_workspace('')
             # systematic_analyzer_cmd = 'python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/systematicsAnalyzer.py card.txt --all -f html > systematics_table.html'
             # execute_cmd(systematic_analyzer_cmd)    
 
     def StdPlots(self, subtag, ledger=None, prefit=False):
-	'''
-	Args:
-	    prefit (bool): If True, plots the prefit distributions instead of postfit. Defaults to False.
-	'''
+        '''
+        Args:
+            prefit (bool): If True, plots the prefit distributions instead of postfit. Defaults to False.
+        '''
         run_dir = self.tag+'/'+subtag
         with cd(run_dir):
             if ledger == None:
@@ -335,7 +335,7 @@ class TwoDAlphabet:
             plot.plot_correlation_matrix( # Ignore nuisance parameters that are bins
                 varsToIgnore=self.ledger.alphaParams.name[self.ledger.alphaParams.name.str.contains('_bin_\d+-\d+')].to_list(),
                 threshold=0, # change this to reduce the size of the correlation matrix to only those variables with correlations above a threshold
-		corrText=False # change this if you want the correlation matrix to write the number values to each grid square (often there are too many parameters and looks ugly/useless)
+        corrText=False # change this if you want the correlation matrix to write the number values to each grid square (often there are too many parameters and looks ugly/useless)
             )
             plot.gen_post_fit_shapes()
             plot.gen_projections(ledger, self, 'b', prefit)
@@ -475,19 +475,19 @@ class TwoDAlphabet:
                     ) for _ in range(njobs)
                 ]
 
-		if not makeEnv:
-		    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True')
+        if not makeEnv:
+            print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True')
 
-                condor = CondorRunner(
-                    name = self.tag+'_'+subtag+'_gof_toys',
-                    primaryCmds=gof_toy_cmds,
-                    toPkg=self.tag+'/',
-                    runIn=run_dir,
-                    toGrab=run_dir+'/higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root',
-                    eosRootfileTarball=eosRootfiles,
-                    remakeEnv=makeEnv
-                )
-                condor.submit()
+            condor = CondorRunner(
+                name = self.tag+'_'+subtag+'_gof_toys',
+                primaryCmds=gof_toy_cmds,
+                toPkg=self.tag+'/',
+                runIn=run_dir,
+                toGrab=run_dir+'/higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root',
+                eosRootfileTarball=eosRootfiles,
+                remakeEnv=makeEnv
+            )
+            condor.submit()
             
     def SignalInjection(self, subtag, injectAmount, ntoys, blindData=True, card_or_w='card.txt', rMin=-5, rMax=5, 
                               seed=123456, verbosity=0, setParams={}, defMinStrat=0, extra='', condor=False, eosRootfiles=None, njobs=0, makeEnv=False):
@@ -507,7 +507,7 @@ class TwoDAlphabet:
                 '--rMin %s'%rMin, '--rMax %s'%rMax,
                 '-n _sigInj_r%s_{seed}'%rinj,
                 '-v %s'%verbosity, '--expectSignal={}'.format(injectAmount),
-		extra
+        extra
             ]
 
             fit_cmd = ' '.join(fit_cmd)
@@ -529,19 +529,19 @@ class TwoDAlphabet:
                     ) for _ in range(njobs)
                 ]
 
-		if not makeEnv:
-		    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run SignalInjection() with makeEnv=True')
+        if not makeEnv:
+            print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run SignalInjection() with makeEnv=True')
 
-                condor = CondorRunner(
-                    name = self.tag+'_'+subtag+'_sigInj_r'+rinj,
-                    primaryCmds=fit_cmds,
-                    toPkg=self.tag+'/',
-                    runIn=run_dir,
-                    toGrab='{run_dir}/fitDiagnostics_sigInj_r{rinj}*.root'.format(run_dir=run_dir,rinj=rinj),
-                    eosRootfileTarball=eosRootfiles,
-                    remakeEnv=False
-                )
-                condor.submit()
+            condor = CondorRunner(
+                name = self.tag+'_'+subtag+'_sigInj_r'+rinj,
+                primaryCmds=fit_cmds,
+                toPkg=self.tag+'/',
+                runIn=run_dir,
+                toGrab='{run_dir}/fitDiagnostics_sigInj_r{rinj}*.root'.format(run_dir=run_dir,rinj=rinj),
+                eosRootfileTarball=eosRootfiles,
+                remakeEnv=False
+            )
+            condor.submit()
 
     def Limit(self, subtag, card_or_w='card.txt', blindData=True, verbosity=0,
                     setParams={}, condor=False, eosRootfiles=None, makeEnv=False):
@@ -555,17 +555,17 @@ class TwoDAlphabet:
             limit_cmd = _runLimit(blindData, verbosity, setParams, card_or_w, condor) # runs on this line if location == 'local'
             
             if condor:
-		if not makeEnv:
-		    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run Limit() with makeEnv=True')
-                condor = CondorRunner(
-                    name=self.tag+'_'+subtag+'_limit',
-                    primaryCmds=[limit_cmd],
-                    toPkg=self.tag+'/',
-                    toGrab=run_dir+'/higgsCombineTest.AsymptoticLimits.mH120.root',
-                    eosRootfileTarball=eosRootfiles,
-		    remakeEnv=makeEnv
-                )
-                condor.submit()
+                if not makeEnv:
+                    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run Limit() with makeEnv=True')
+                    condor = CondorRunner(
+                        name=self.tag+'_'+subtag+'_limit',
+                        primaryCmds=[limit_cmd],
+                        toPkg=self.tag+'/',
+                        toGrab=run_dir+'/higgsCombineTest.AsymptoticLimits.mH120.root',
+                        eosRootfileTarball=eosRootfiles,
+                remakeEnv=makeEnv
+                    )
+                    condor.submit()
                 
     def Impacts(self, subtag, rMin=-15, rMax=15, cardOrW='initialFitWorkspace.root --snapshotName initialFit', defMinStrat=0, extra=''):
         # param_str = '' if setParams == {} else '--setParameters '+','.join(['%s=%s'%(p,v) for p,v in setParams.items()])
@@ -875,13 +875,13 @@ def MakeCard(ledger, subtag, workspaceDir):
 def _runMLfit(cardOrW, blinding, verbosity, rMin, rMax, setParams, usePreviousFit=False, defMinStrat=0, extra=''):
     '''
     defMinStrat (int): sets the cminDefaultMinimizerStrategy option for the ML fit
-	0: speed	(evaluate function less often)
-	1: balance
-	2: robustness	(waste function calls to get precise answers)
+    0: speed    (evaluate function less often)
+    1: balance
+    2: robustness   (waste function calls to get precise answers)
     Hesse (error/correlation estimation) will be run only if the strategy is 1 or 2
     '''
     if defMinStrat not in [0, 1, 2]:
-	raise RuntimeError("Invalid cminDefaultMinimizerStrategy passed ({}) - please ensure that defMinStrat = 0, 1, or 2".format(defMinStrat))
+        raise RuntimeError("Invalid cminDefaultMinimizerStrategy passed ({}) - please ensure that defMinStrat = 0, 1, or 2".format(defMinStrat))
     if usePreviousFit: param_options = ''
     else:              param_options = '--text2workspace "--channel-masks" '
     params_to_set = ','.join(['mask_%s_SIG=1'%r for r in blinding]+['%s=%s'%(p,v) for p,v in setParams.items()]+['r=1'])
@@ -891,7 +891,7 @@ def _runMLfit(cardOrW, blinding, verbosity, rMin, rMax, setParams, usePreviousFi
     fit_cmd = fit_cmd.format(
         card_or_w='initifalFitWorkspace.root --snapshotName initialFit' if usePreviousFit else cardOrW,
         param_options=param_options,
-	defMinStrat=defMinStrat,
+    defMinStrat=defMinStrat,
         rmin=rMin,
         rmax=rMax,
         verbosity=verbosity,
