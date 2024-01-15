@@ -84,6 +84,8 @@ class Plotter(object):
         hslice.GetXaxis().SetTitle(xtitle)
         hslice.GetYaxis().SetTitle(ytitle)
 
+        color = int(color) #ROOT call in C++ sometimes cannot convert it to int
+
         if proc_type == 'BKG':
             hslice.SetFillColor(color)
             hslice.SetLineColorAlpha(0,0)
@@ -307,8 +309,8 @@ class Plotter(object):
                     these_pads = these_pads.loc[these_pads.logy.eq(False)]
                 else:
                     these_pads = these_pads.loc[these_pads.logy.eq(True)]
-                
-                these_pads = these_pads.sort_values(by=['region','proj']).pad.to_list()
+
+                these_pads = these_pads.sort_values(by=['region','proj'])['pad'].to_list()
                 out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
                 make_can(out_can_name, these_pads)
         
@@ -349,7 +351,7 @@ class Plotter(object):
                     pads = pads.append({'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}, ignore_index=True)
 
         for process, padgroup in pads.groupby('process'):
-            these_pads = padgroup.sort_values(by=['region','proj']).pad.to_list()
+            these_pads = padgroup.sort_values(by=['region','proj'])['pad'].to_list()
         make_can('{d}/{p}_{proj}'.format(d=self.dir, p=process,proj=proj), these_pads)
 
 
