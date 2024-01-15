@@ -12,7 +12,6 @@ git clone git@github.com:JHU-Tools/CombineHarvester.git
 cd CombineHarvester/
 git fetch origin
 git checkout CMSSW_11_3_X
-history | grep CMSSW
 cd ../
 scramv1 b clean
 scramv1 b -j 8
