@@ -905,7 +905,7 @@ def gen_post_fit_shapes():
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.root'
         else:
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.123456.root'
-        shapes_cmd = 'PostFit2DShapesFromWorkspace -w {w} -o postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print 2> PostFitShapes2D_stderr_{t}.txt'.format(t=t,w=workspace_file)
+        shapes_cmd = 'PostFit2DShapesFromWorkspace -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print > PostFitShapes2D_stderr_{t}.txt'.format(t=t,w=workspace_file)
         execute_cmd(shapes_cmd)
     fit_result_file.Close()
 
