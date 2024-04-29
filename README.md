@@ -3,7 +3,7 @@ Instructions to set up 2DAlphabet on `el8` and `el9` architectures (tested on FN
 * [Combine](https://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/latest/#combine-v9-recommended-version) uses `CMSSW_11_3_X` which runs only on `slc7` and therefore has to be setup using apptainer on `el8/9`. 
 * Once you have performed the setup via apptainer once, you *do not* have to repeat it each time. Simply go to the directory in which you performed this setup, type `cmssw-el7`, and navigate to the `CMSSW_11_3_4/src/` directory within the container to do your work
 
-
+## One-time setup
 ```
 # Set up Combine
 cmssw-el7
@@ -43,3 +43,14 @@ import ROOT
 r = ROOT.RooParametricHist()
 ```
 
+## Setup after initial installation in apptainer
+
+You do not need to re-compile the packages every time you log back in to the node. Instead:
+
+* Navigate to the directory where you started the apptainer container
+* Start the container via `cmssw-el7`
+* `cd CMSSW_11_3_4/src/`
+* `cmsenv`
+* `source twoD-env/bin/activate`
+
+And then you are ready to work with 2DAlphabet + Combine
