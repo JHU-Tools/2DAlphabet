@@ -1,5 +1,8 @@
 # Installation instructions
-Instructions to set up 2DAlphabet on `el8` and `el9` architectures (tested on FNAL LPC). **NOTE:** [Combine](https://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/latest/#combine-v9-recommended-version) uses`CMSSW_11_3_X` runs on `slc7`, which has to be setup using apptainer on `el8/9`. 
+Instructions to set up 2DAlphabet on `el8` and `el9` architectures (tested on FNAL LPC). **NOTE:** 
+* [Combine](https://cms-analysis.github.io/HiggsAnalysis-CombinedLimit/latest/#combine-v9-recommended-version) uses `CMSSW_11_3_X` which runs only on `slc7` and therefore has to be setup using apptainer on `el8/9`. 
+* Once you have performed the setup via apptainer once, you *do not* have to repeat it each time. Simply go to the directory in which you performed this setup, type `cmssw-el7`, and navigate to the `CMSSW_11_3_4/src/` directory within the container to do your work
+
 
 ```
 # Set up Combine
@@ -32,5 +35,11 @@ cd 2DAlphabet/
 git fetch origin
 git checkout el8-el9-py3
 python setup.py develop
+```
+
+You can test that everything works by opening a python shell and typing:
+```
+import ROOT
+r = ROOT.RooParametricHist()
 ```
 
