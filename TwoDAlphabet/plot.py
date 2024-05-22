@@ -789,6 +789,11 @@ def make_systematic_plots(twoD):
         for axis in ['X','Y']:
             nominal = getattr(nominal_full,'Projection'+axis)('%s_%s_%s_%s'%(p,r,'nom','proj'+axis))
             for s in twoD.ledger.GetShapeSystematics(drop_norms=True):
+                # First determine whether the given process has the systematic in question (for instance, top pT reweighting is applied to ttbar, not V+jets)
+                pr_df = twoD.df.loc[(twoD.df['process']==p) & (twoD.df['region']==r)]
+                if s not in list(pr_df['variation']):
+                    # If the given systematic is not applied to this process, move to next item in for loop
+                    continue
                 up = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Up'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Up','proj'+axis))
                 down = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Down'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Down','proj'+axis))
 
@@ -816,6 +821,14 @@ def make_systematic_plots(twoD):
                 nominal.Draw('hist')
                 up.Draw('same hist')
                 down.Draw('same hist')
+
+                ROOT.gStyle.SetOptStat(0)
+                legend = ROOT.TLegend(0.48, 0.70, 0.9, 0.9)
+                legend.SetBorderSize(0)
+                legend.AddEntry(nominal, 'Nom', 'f')
+                legend.AddEntry(up, 'Up', 'f')
+                legend.AddEntry(down, 'Down', 'f')
+                legend.Draw()
 
                 c.Print(twoD.tag+'/UncertPlots/Uncertainty_%s_%s_%s_%s.png'%(p,r,s,'proj'+axis),'png')
 
