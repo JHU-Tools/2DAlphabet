@@ -754,6 +754,7 @@ def make_can(outname, padnames, padx=0, pady=0):
     
     print ('Writing grid of images %s.pdf'%outname)
     grid.save(outname+'.pdf')
+    grid.save(outname+'.png')
 
 def _get_start_stop(i,slice_idxs):
     start = slice_idxs[i]+1
