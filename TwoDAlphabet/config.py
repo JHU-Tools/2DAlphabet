@@ -393,6 +393,7 @@ class OrganizedHists():
             None
         '''
         for infilename,histdf in self.hist_map.items():
+            infilename = infilename[0] #Gets extracted as tuple for some reason
             infile = ROOT.TFile.Open(infilename)
             for row in histdf.itertuples():
                 if row.source_histname not in [k.GetName() for k in infile.GetListOfKeys()]:
