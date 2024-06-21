@@ -111,13 +111,9 @@ class Config:
         processes = self._processTable()
         systematics = self._systematicsTable()
 
-        # with pandas.option_context('display.max_rows', None, 'display.max_columns', None):
-        #     print(regions)
-        #     print("----")
-        #     print(processes)
-        #     print("----")
-        #     print(systematics)
-        #     exit()
+        regions.to_string('regions.txt')
+        processes.to_string('processes.txt')
+        systematics.to_string('systematics.txt')
 
         for p,group in processes.groupby(processes.index):
             if group.title.nunique() > 1:
@@ -131,10 +127,6 @@ class Config:
         proc_syst = processes.merge(systematics,right_index=True,left_on='variation',how='left',suffixes=['','_syst'])
         proc_syst = _df_condense_nameinfo(proc_syst,'source_histname')
         proc_syst = _df_condense_nameinfo(proc_syst,'source_filename')
-
-        with pandas.option_context('display.max_rows', None, 'display.max_columns', None):
-            print(proc_syst)
-            exit()
 
         final = regions.merge(proc_syst,right_index=True,left_on='process',how='left')
         final = _keyword_replace(final, ['source_filename', 'source_histname']).reset_index(drop=True)
@@ -248,9 +240,8 @@ class Config:
                 )
                 rows_to_append = self._iterObjReplaceProducer(this_proc_info, row_format)
                 for new_row in rows_to_append:
-                    if isinstance(new_row, pandas.Series):
-                        new_row = new_row.to_frame().T
-                    out_df = pandas.concat([out_df, new_row], ignore_index=True)
+                    new_row = new_row.to_frame().T
+                    out_df = pandas.concat([out_df, new_row], ignore_index=False)
 
         return out_df
 
