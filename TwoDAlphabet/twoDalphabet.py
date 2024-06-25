@@ -509,7 +509,7 @@ class TwoDAlphabet:
                 '--rMin %s'%rMin, '--rMax %s'%rMax,
                 '-n _sigInj_r%s_{seed}'%rinj,
                 '-v %s'%verbosity, '--expectSignal={}'.format(injectAmount),
-        extra
+                extra
             ]
 
             fit_cmd = ' '.join(fit_cmd)
@@ -531,19 +531,19 @@ class TwoDAlphabet:
                     ) for _ in range(njobs)
                 ]
 
-        if not makeEnv:
-            print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run SignalInjection() with makeEnv=True')
+                if not makeEnv:
+                    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run SignalInjection() with makeEnv=True')
 
-            condor = CondorRunner(
-                name = self.tag+'_'+subtag+'_sigInj_r'+rinj,
-                primaryCmds=fit_cmds,
-                toPkg=self.tag+'/',
-                runIn=run_dir,
-                toGrab='{run_dir}/fitDiagnostics_sigInj_r{rinj}*.root'.format(run_dir=run_dir,rinj=rinj),
-                eosRootfileTarball=eosRootfiles,
-                remakeEnv=False
-            )
-            condor.submit()
+                condor = CondorRunner(
+                    name = self.tag+'_'+subtag+'_sigInj_r'+rinj,
+                    primaryCmds=fit_cmds,
+                    toPkg=self.tag+'/',
+                    runIn=run_dir,
+                    toGrab='{run_dir}/fitDiagnostics_sigInj_r{rinj}*.root'.format(run_dir=run_dir,rinj=rinj),
+                    eosRootfileTarball=eosRootfiles,
+                    remakeEnv=False
+                )
+                condor.submit()
 
     def Limit(self, subtag, card_or_w='card.txt', blindData=True, verbosity=0,
                     setParams={}, condor=False, eosRootfiles=None, makeEnv=False):
