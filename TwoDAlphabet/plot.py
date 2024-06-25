@@ -139,11 +139,11 @@ class Plotter(object):
                     proc_type = 'TOTAL'
                     proc_title = 'TotalBkg'
 
-                self.df = self.df.append({'process':process,
+                self.df = pandas.concat([self.df,pandas.DataFrame([{'process':process,
                                           'region':region,
                                           'process_type': proc_type,
-                                          'title': proc_title}, ignore_index=True)
-                
+                                          'title': proc_title}])], ignore_index=True)
+
                 for time in ['prefit','postfit']:
                     # 2D distributions first
                     out2d_name = '%s_%s_%s_2D'%(process,region,time)
@@ -300,7 +300,7 @@ class Plotter(object):
                                     subtitle=slice_str, totalBkg=this_totalbkg,
                                     logyFlag=logyFlag, year=self.twoD.options.year, preVsPost=False,
                                     extraText='', savePDF=True, savePNG=True, ROOTout=False)
-                        pads = pads.append({'pad':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}, ignore_index=True)
+                        pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}])], ignore_index=True)
 
         for logy in ['','_logy']:
             for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
@@ -348,7 +348,7 @@ class Plotter(object):
             preVsPost=True  # This tells make_pad_1D() that we're not passing in data distributions but rather a non-data postfit dist and to relabel the legend
                     )
                     
-                    pads = pads.append({'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}, ignore_index=True)
+                    pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}])], ignore_index=True)
 
         for process, padgroup in pads.groupby('process'):
             these_pads = padgroup.sort_values(by=['region','proj'])['pad'].to_list()

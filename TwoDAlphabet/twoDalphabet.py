@@ -174,13 +174,15 @@ class TwoDAlphabet:
             'title': title_to_use
         }
 
-        self.ledger.alphaObjs = self.ledger.alphaObjs.append(model_obj_row, ignore_index=True)
+        model_obj_row_df = pandas.DataFrame([model_obj_row])
+        self.ledger.alphaObjs = pandas.concat([self.ledger.alphaObjs, model_obj_row_df], ignore_index=True)
 
         nuis_obj_cols = ['name', 'constraint']
         for n in obj.nuisances:
             d = {c:n[c] for c in nuis_obj_cols}
             d['owner'] = process+'_'+region
-            self.ledger.alphaParams = self.ledger.alphaParams.append(d, ignore_index=True)
+            d_df = pandas.DataFrame([d])
+            self.ledger.alphaParams = pandas.concat([self.ledger.alphaParams, d_df], ignore_index=True)
 
         for rph_cat in rph.values():
             print ('Adding RooParametricHist... %s'%rph_cat.GetName())
@@ -608,7 +610,7 @@ class Ledger():
         self.alphaParams = pandas.DataFrame(columns=['name','constraint','owner'])
 
     def append(self, toAppend):
-        self.df.append(toAppend, ignore_index=True if isinstance(toAppend, dict) else False)
+        self.df.concat(toAppend, ignore_index=True if isinstance(toAppend, dict) else False)
 
     def select(self,f,*args):
         def _kept_owner(row, owner_names):
