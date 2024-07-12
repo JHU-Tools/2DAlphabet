@@ -84,6 +84,8 @@ class Plotter(object):
         hslice.GetXaxis().SetTitle(xtitle)
         hslice.GetYaxis().SetTitle(ytitle)
 
+        color = int(color) #ROOT call in C++ sometimes cannot convert it to int
+
         if proc_type == 'BKG':
             hslice.SetFillColor(color)
             hslice.SetLineColorAlpha(0,0)
@@ -137,11 +139,11 @@ class Plotter(object):
                     proc_type = 'TOTAL'
                     proc_title = 'TotalBkg'
 
-                self.df = self.df.append({'process':process,
+                self.df = pandas.concat([self.df,pandas.DataFrame([{'process':process,
                                           'region':region,
                                           'process_type': proc_type,
-                                          'title': proc_title}, ignore_index=True)
-                
+                                          'title': proc_title}])], ignore_index=True)
+
                 for time in ['prefit','postfit']:
                     # 2D distributions first
                     out2d_name = '%s_%s_%s_2D'%(process,region,time)
@@ -256,7 +258,7 @@ class Plotter(object):
         are the different slices of the un-plotted axis.
 
         Args:
-	    prefit (bool): If True, will plot the prefit distributions instead of postfit. Defaults to False.
+        prefit (bool): If True, will plot the prefit distributions instead of postfit. Defaults to False.
         Returns:
             None
         '''
@@ -298,7 +300,7 @@ class Plotter(object):
                                     subtitle=slice_str, totalBkg=this_totalbkg,
                                     logyFlag=logyFlag, year=self.twoD.options.year, preVsPost=False,
                                     extraText='', savePDF=True, savePNG=True, ROOTout=False)
-                        pads = pads.append({'pad':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}, ignore_index=True)
+                        pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}])], ignore_index=True)
 
         for logy in ['','_logy']:
             for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
@@ -307,8 +309,8 @@ class Plotter(object):
                     these_pads = these_pads.loc[these_pads.logy.eq(False)]
                 else:
                     these_pads = these_pads.loc[these_pads.logy.eq(True)]
-                
-                these_pads = these_pads.sort_values(by=['region','proj']).pad.to_list()
+
+                these_pads = these_pads.sort_values(by=['region','proj'])['pad'].to_list()
                 out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
                 make_can(out_can_name, these_pads)
         
@@ -324,10 +326,10 @@ class Plotter(object):
                     projn = proj+str(islice)
                     post = self.Get('%s_%s_postfit_%s'%(process,region,projn))
                     post.SetLineColor(ROOT.kBlack)
-                    post.SetTitle('          Postfit,'+process)	# spaces are for legend aesthetics
+                    post.SetTitle('          Postfit,'+process) # spaces are for legend aesthetics
 
                     pre = self.Get('%s_%s_prefit_%s'%(process,region,projn))
-		    pre.SetLineColor(ROOT.kRed)
+                    pre.SetLineColor(ROOT.kRed)
                     pre.SetTitle('Prefit, '+process)
 
                     slice_edges = (
@@ -343,14 +345,14 @@ class Plotter(object):
                         out_pad_name, 
                         post, [pre], totalBkg=pre, subtitle=slice_str, savePDF=True, savePNG=True, 
                         datastyle='histe', year=self.twoD.options.year, extraText='',
-			preVsPost=True	# This tells make_pad_1D() that we're not passing in data distributions but rather a non-data postfit dist and to relabel the legend
+            preVsPost=True  # This tells make_pad_1D() that we're not passing in data distributions but rather a non-data postfit dist and to relabel the legend
                     )
                     
-                    pads = pads.append({'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}, ignore_index=True)
+                    pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}])], ignore_index=True)
 
-	    for process, padgroup in pads.groupby('process'):
-		these_pads = padgroup.sort_values(by=['region','proj']).pad.to_list()
-		make_can('{d}/{p}_{proj}'.format(d=self.dir, p=process,proj=proj), these_pads)
+        for process, padgroup in pads.groupby('process'):
+            these_pads = padgroup.sort_values(by=['region','proj'])['pad'].to_list()
+        make_can('{d}/{p}_{proj}'.format(d=self.dir, p=process,proj=proj), these_pads)
 
 
     def plot_transfer_funcs(self):
@@ -537,7 +539,7 @@ def make_pad_1D(outname, data, bkgs=[], signals=[], title='', subtitle='',
         savePDF (bool, optional): Save to PDF. Defaults to True.
         savePNG (bool, optional): Save to PNG. Defaults to True.
         dataOff (bool, optional): Turn off the data from plotting. Defaults to False.
-	preVsPost (bool, optional): Incoming data histogram is postfit distribution of non-data process. If True, renames legend entry. See plot_pre_vs_post().
+    preVsPost (bool, optional): Incoming data histogram is postfit distribution of non-data process. If True, renames legend entry. See plot_pre_vs_post().
         datastyle (str, optional): ROOT drawing style for the data. Defaults to 'pe X0'.
         year (int, optional): Luminosity formatting. Options are 16, 17, 18, 1 (full Run 2), 2 (16+17+18). Defaults to 1.
         addSignals (bool, optional): If True, multiple signals will be added together and plotted as one. If False, signals are plotted individually. Defaults to True.
@@ -565,7 +567,7 @@ def make_pad_1D(outname, data, bkgs=[], signals=[], title='', subtitle='',
         data.SetMarkerColorAlpha(ROOT.kBlack,0 if dataOff else 1)
         data.SetMarkerStyle(8)
     if 'hist' in datastyle.lower():
-	data.SetFillColorAlpha(0,0)
+        data.SetFillColorAlpha(0,0)
 
     data.SetTitleOffset(1.15,"xy")
     data.GetYaxis().SetTitleOffset(1.04)
@@ -613,10 +615,10 @@ def make_pad_1D(outname, data, bkgs=[], signals=[], title='', subtitle='',
         legend = ROOT.TLegend(0.65,legend_bottomY,0.90,0.88)
         legend.SetBorderSize(0)
         if not dataOff:
-	    if preVsPost:
-		legend.AddEntry(data,'Postfit',datastyle)
-	    else:
-		legend.AddEntry(data,'Data',datastyle)
+            if preVsPost:
+                legend.AddEntry(data,'Postfit',datastyle)
+            else:
+                legend.AddEntry(data,'Data',datastyle)
 
         totalBkg.SetMarkerStyle(0)
         totalBkg_err = totalBkg.Clone()
@@ -625,12 +627,12 @@ def make_pad_1D(outname, data, bkgs=[], signals=[], title='', subtitle='',
         totalBkg_err.SetLineWidth(0)
         totalBkg_err.SetFillColor(ROOT.kBlack)
         totalBkg_err.SetFillStyle(3354)
-	if preVsPost:
-	    # Determine whether we're plotting uncertainty on Prefit or Postfit distribution (plot_pre_vs_post() uses prefit unc)
-	    isPrefit = 1 if 'Prefit' in totalBkg.GetTitle() else 0
-	    legend.AddEntry(totalBkg_err,'Total {} unc.'.format('prefit' if isPrefit else 'postfit'), 'F')
-	else:
-	    legend.AddEntry(totalBkg_err,'Total bkg unc.','F')
+    if preVsPost:
+        # Determine whether we're plotting uncertainty on Prefit or Postfit distribution (plot_pre_vs_post() uses prefit unc)
+        isPrefit = 1 if 'Prefit' in totalBkg.GetTitle() else 0
+        legend.AddEntry(totalBkg_err,'Total {} unc.'.format('prefit' if isPrefit else 'postfit'), 'F')
+    else:
+        legend.AddEntry(totalBkg_err,'Total bkg unc.','F')
 
         sigs_to_plot = signals
         # Can add together for total signal
@@ -761,8 +763,8 @@ def _get_start_stop(i,slice_idxs):
 def gen_projections(ledger, twoD, fittag, loadExisting=False, prefit=False):
     '''
     Optional Args:
-	loadExisting (bool): Flag to load existing projections instead of remaking everything. Defaults to False.
-	prefit	     (bool): Flag to plot prefit distributions instead of postfit. Defaults to False.
+    loadExisting (bool): Flag to load existing projections instead of remaking everything. Defaults to False.
+    prefit       (bool): Flag to plot prefit distributions instead of postfit. Defaults to False.
     '''
     plotter = Plotter(ledger, twoD, fittag, loadExisting)
     plotter.plot_2D_distributions()
@@ -905,7 +907,7 @@ def gen_post_fit_shapes():
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.root'
         else:
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.123456.root'
-        shapes_cmd = 'PostFit2DShapesFromWorkspace -w {w} -o postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print 2> PostFitShapes2D_stderr_{t}.txt'.format(t=t,w=workspace_file)
+        shapes_cmd = 'PostFit2DShapesFromWorkspace -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print > PostFitShapes2D_stderr_{t}.txt'.format(t=t,w=workspace_file)
         execute_cmd(shapes_cmd)
     fit_result_file.Close()
 
@@ -967,7 +969,7 @@ def plot_correlation_matrix(varsToIgnore, threshold=0, corrText=False):
             corrMtrx.GetYaxis().SetLabelSize(0.01)
             corrMtrx.Draw('colz text' if corrText else 'colz')
             corrMtrxCan.Print('plots_fit_%s/correlation_matrix.png'%fittag,'png')
-	    corrMtrxCan.Print('plots_fit_%s/correlation_matrix.pdf'%fittag,'pdf')
+            corrMtrxCan.Print('plots_fit_%s/correlation_matrix.pdf'%fittag,'pdf')
 
             with open('plots_fit_%s/correlation_matrix.txt'%fittag,'w') as corrTxtFile:
                 corrTxtFile.write(corrTxt)
@@ -1054,7 +1056,7 @@ def plot_gof(tag, subtag, seed=123456, condor=False):
         cout.Print('gof_plot.pdf','pdf')
         cout.Print('gof_plot.png','png')
 
-	if condor:
+    if condor:
             execute_cmd('rm -r '+tmpdir)
 
 def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, condor=False):
@@ -1075,9 +1077,9 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
 
         ROOT.gROOT.SetBatch(True)
         if stats:
-	    ROOT.gStyle.SetOptStat(True)
-	else:
-	    ROOT.gStyle.SetOptStat(False)
+            ROOT.gStyle.SetOptStat(True)
+        else:
+            ROOT.gStyle.SetOptStat(False)
         # Final plotting
         result_can = ROOT.TCanvas('sigpull_can','sigpull_can',800,700)
 
@@ -1100,5 +1102,5 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
         hsignstrength.Draw('pe')
         result_can.Print('signalInjection_r%s.png'%(str(injectedAmount).replace('.','p')),'png')
 
-	if condor:
+    if condor:
             execute_cmd('rm -r '+tmpdir)

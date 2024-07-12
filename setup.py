@@ -4,7 +4,8 @@ import setuptools, sys
 
 requires = [
       'pandas',
-      'Pillow'
+      'Pillow',
+      'tabulate'
 ]
 if sys.version_info.major == 3:
     requires.extend(['doxypypy','pytest','pytest-cov'])

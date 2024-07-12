@@ -111,6 +111,10 @@ class Config:
         processes = self._processTable()
         systematics = self._systematicsTable()
 
+        regions.to_string('regions.txt')
+        processes.to_string('processes.txt')
+        systematics.to_string('systematics.txt')
+
         for p,group in processes.groupby(processes.index):
             if group.title.nunique() > 1:
                 raise RuntimeError('There are multiple titles specified for process %s. Do not use multiple substitution for titles. Use plotting options instead.\n%s'%(p,group))
@@ -184,21 +188,27 @@ class Config:
         for r in self._section('REGIONS'):
             data_key = _data_not_included(r)
             if data_key:
-                out_df = out_df.append(pandas.Series({'process':data_key,'region':r, 'binning':self._section('REGIONS')[r]['BINNING']}),ignore_index=True)
+                new_row = pandas.DataFrame([{
+                    'process': data_key,
+                    'region': r,
+                    'binning': self._section('REGIONS')[r]['BINNING']
+                }])
+                out_df = pandas.concat([out_df, new_row], ignore_index=True)
+
 
             for p in self._section('REGIONS')[r]['PROCESSES']:
                 if p not in self._section('PROCESSES') and len([kglobal for kglobal in self._section('GLOBAL') if kglobal in p]) == 0:
                     raise RuntimeError('Process "%s" listed for region "%s" not defined in PROCESSES section.'%(p,r))
-                
-                row_format = lambda c: {
+
+                row_format = lambda c: pandas.DataFrame([{
                     'process': c['PROCESS'],
                     'region': c['REGION'],
-                    'binning':self._section('REGIONS')[c['REGION']]['BINNING']
-                }
+                    'binning': self._section('REGIONS')[c['REGION']]['BINNING']
+                }])
                 rows_to_append = self._iterObjReplaceProducer({'PROCESS':p, 'REGION':r}, row_format)
                 for new_row in rows_to_append:
-                    out_df = out_df.append(new_row,ignore_index=True)
-                
+                    out_df = pandas.concat([out_df,new_row],ignore_index=True)
+  
         return out_df
 
     def _processTable(self):
@@ -230,7 +240,8 @@ class Config:
                 )
                 rows_to_append = self._iterObjReplaceProducer(this_proc_info, row_format)
                 for new_row in rows_to_append:
-                    out_df = out_df.append(new_row)
+                    new_row = new_row.to_frame().T
+                    out_df = pandas.concat([out_df, new_row], ignore_index=False)
 
         return out_df
 
@@ -249,7 +260,8 @@ class Config:
             iterations_to_process = self._iterObjReplaceProducer(self._section('SYSTEMATICS')[s], lambda c: c)
             for iteration in iterations_to_process:
                 for syst in _get_syst_attrs(s, iteration):
-                    out_df = out_df.append(syst)
+                    syst = syst.to_frame().T
+                    out_df = pandas.concat([out_df,syst])
         
         return out_df
 
@@ -381,6 +393,7 @@ class OrganizedHists():
             None
         '''
         for infilename,histdf in self.hist_map.items():
+            infilename = infilename[0] #Gets extracted as tuple for some reason
             infile = ROOT.TFile.Open(infilename)
             for row in histdf.itertuples():
                 if row.source_histname not in [k.GetName() for k in infile.GetListOfKeys()]:

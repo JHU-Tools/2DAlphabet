@@ -1,17 +1,21 @@
 # Installation instructions
 ```
-export SCRAM_ARCH=slc7_amd64_gcc700
-cmsrel CMSSW_10_6_14
-cd CMSSW_10_6_14/src
+cmsrel CMSSW_14_1_0_pre4
+cd CMSSW_14_1_0_pre4/src
 cmsenv
-git clone https://github.com/JHU-Tools/2DAlphabet.git
-git clone --branch 102x https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
-curl -s https://raw.githubusercontent.com/JHU-Tools/CombineHarvester/master/CombineTools/scripts/sparse-checkout-ssh.sh | bash
-scram b clean; scram b -j 8
-cmsenv
-python -m virtualenv twoD-env
+git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
+cd HiggsAnalysis/CombinedLimit
+git fetch origin
+git checkout v10.0.1
+cd ../../
+git clone --branch CMSWW_14_1_0_pre4 git@github.com:JHU-Tools/CombineHarvester.git
+cd CombineHarvester/
+cd ..
+scramv1 b clean
+scramv1 b -j 16
+git clone --branch el9_debug git@github.com:JHU-Tools/2DAlphabet.git
+python3 -m virtualenv twoD-env
 source twoD-env/bin/activate
 cd 2DAlphabet/
 python setup.py develop
 ```
-
