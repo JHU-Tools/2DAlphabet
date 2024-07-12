@@ -221,8 +221,8 @@ class Config:
                     {'color': nan if 'COLOR' not in info else info['COLOR'],
                     'process_type': info['TYPE'],
                     'scale': 1.0 if 'SCALE' not in info else info['SCALE'],
-                    'source_filename': info['LOC'].split(':')[0],
-                    'source_histname': info['LOC'].split(':')[1],
+                    'source_filename': info['LOC'].split(':')[0] if 'root://' not in info['LOC'] else info['LOC'].split(':')[0]+':'+info['LOC'].split(':')[1],
+                    'source_histname': info['LOC'].split(':')[1] if 'root://' not in info['LOC'] else info['LOC'].split(':')[2],
                     'alias': info['NAME'] if 'ALIAS' not in info.keys() else info['ALIAS'], #in file name
                     'title': info['NAME'] if 'TITLE' not in info.keys() else info['TITLE'], #in legend entry
                     'variation': info['VARIATION'],
@@ -517,15 +517,15 @@ def _get_syst_attrs(name,syst_dict):
             {
                 'shapes':syst_dict['SIGMA'],
                 'syst_type': 'shapes',
-                'source_filename': syst_dict['UP'].split(':')[0],
-                'source_histname': syst_dict['UP'].split(':')[1],
+                'source_filename': syst_dict['UP'].split(':')[0] if 'root://' not in syst_dict['UP'] else syst_dict['UP'].split(':')[0]+':'+syst_dict['UP'].split(':')[1],
+                'source_histname': syst_dict['UP'].split(':')[1] if 'root://' not in syst_dict['UP'] else syst_dict['UP'].split(':')[2],
                 'direction': 'Up',
                 'variation_alias': name if 'ALIAS' not in syst_dict else syst_dict['ALIAS']
             }, {
                 'shapes':syst_dict['SIGMA'],
                 'syst_type': 'shapes',
-                'source_filename': syst_dict['DOWN'].split(':')[0],
-                'source_histname': syst_dict['DOWN'].split(':')[1],
+                'source_filename': syst_dict['DOWN'].split(':')[0] if 'root://' not in syst_dict['DOWN'] else syst_dict['DOWN'].split(':')[0]+':'+syst_dict['DOWN'].split(':')[1],
+                'source_histname': syst_dict['DOWN'].split(':')[1] if 'root://' not in syst_dict['DOWN'] else syst_dict['DOWN'].split(':')[2],
                 'direction': 'Down',
                 'variation_alias': name if 'ALIAS' not in syst_dict else syst_dict['ALIAS']
             }
@@ -563,7 +563,7 @@ def _df_sanity_checks(df):
         RuntimeError: Duplicates exist (duplicated rows are printed).
     '''
     # check for duplicate process+region+variation
-    dupes = df[df.duplicated(subset=['process','region','variation','source_filename','source_histname'],keep=False)]
+    dupes = df[df.duplicated(subset=['process','region','variation','source_filename','source_histname','direction'],keep=False)]
     if dupes.shape[0] > 0:
         raise RuntimeError('Duplicates exist. Printing them...\n%s'%dupes)
       
