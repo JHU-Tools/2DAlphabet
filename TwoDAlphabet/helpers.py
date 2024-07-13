@@ -1,6 +1,22 @@
 import subprocess, json, ROOT, os, copy, time, glob
+import numpy as np
 from collections import defaultdict
 from contextlib import contextmanager
+
+# Function stolen from https://root-forum.cern.ch/t/trying-to-convert-rdf-generated-histogram-into-numpy-array/53428/3
+def hist2array(hist):
+    '''Create a numpy array from a ROOT histogram without external tools like root_numpy.
+
+    Args:
+        hist (TH1): Input ROOT histogram
+
+    Returns:
+        arr (np.ndarray): Array representing the ROOT histogram
+    '''
+    hist.BufferEmpty()
+    root_arr = hist.GetArray()
+    arr = np.ndarray((hist.GetNbinsX(),), dtype=np.float64, buffer=root_arr, order='C')
+    return arr
 
 # Function stolen from https://stackoverflow.com/questions/9590382/forcing-python-json-module-to-work-with-ascii
 def open_json(f):

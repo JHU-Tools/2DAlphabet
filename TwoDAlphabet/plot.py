@@ -1,9 +1,13 @@
 import glob
 import ROOT, os, warnings, pandas, math, time
 from PIL import Image
-from TwoDAlphabet.helpers import set_hist_maximums, execute_cmd, cd
+from TwoDAlphabet.helpers import set_hist_maximums, execute_cmd, cd, hist2array
 from TwoDAlphabet.binning import stitch_hists_in_x, convert_to_events_per_unit, get_min_bin_width
 from TwoDAlphabet.ext import tdrstyle, CMS_lumi
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import mplhep as hep
 
 class Plotter(object):
     '''Class to manage output distributions, manipulate them, and provide access to plotting
@@ -774,50 +778,61 @@ def gen_projections(ledger, twoD, fittag, loadExisting=False, prefit=False):
 
 def make_systematic_plots(twoD):
     '''Make plots of the systematic shape variations of each process based on those
-    processes and systematic shapes specified in the config. Shapes are presented 
+    processes and systematic shapes specified in the config. Shapes are presented
     as projections onto 1D axis where no selection has been made on the axis not
     being plotted. Plots are saved to UncertPlots/.
     '''
-    c = ROOT.TCanvas('c','c',800,700)
-
     for (p,r), _ in twoD.df.groupby(['process','region']):
         if p == 'data_obs': continue
 
-        nominal_full = twoD.organizedHists.Get(process=p,region=r,systematic='')
+        nominal_full = twoD.organizedHists.Get(process=p, region=r, systematic='')
         binning, _ = twoD.GetBinningFor(r)
 
         for axis in ['X','Y']:
-            nominal = getattr(nominal_full,'Projection'+axis)('%s_%s_%s_%s'%(p,r,'nom','proj'+axis))
+
+            nominal_hist = getattr(nominal_full,'Projection'+axis)('%s_%s_%s_%s'%(p,r,'nom','proj'+axis))
+            nominal = hist2array(nominal_hist)
+
+            # Get the bin edges from the 2DAlphabet binning object. Avoid edge duplication in the case of X-axis stitching
+            if axis == 'X':
+                xbins = binning.xbinByCat
+                edges = xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH']
+            else:
+                edges = binning.ybinList
+
+            # GetShapeSystematics() lists all shape systs, even if the given process is not subject to them.
+            check_df = twoD.df.loc[(twoD.df.process == p) & (twoD.df.region == r)] # Get the entries for this proc and region
+            proc_vars = check_df.variation.unique() # Get all unique variations for this process
+
             for s in twoD.ledger.GetShapeSystematics(drop_norms=True):
-                up = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Up'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Up','proj'+axis))
-                down = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Down'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Down','proj'+axis))
+                if s not in proc_vars: continue
 
-                c.cd()
-                nominal.SetLineColor(ROOT.kBlack)
-                nominal.SetFillColor(ROOT.kYellow-9)
-                up.SetLineColor(ROOT.kRed)
-                up.SetFillColorAlpha(ROOT.kWhite, 0)
-                down.SetLineColor(ROOT.kBlue)
-                down.SetFillColorAlpha(ROOT.kWhite, 0)
+                up_hist = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Up'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Up','proj'+axis))
+                up = hist2array(up_hist)
+                down_hist = getattr(twoD.organizedHists.Get(process=p,region=r,systematic=s+'Down'),'Projection'+axis)('%s_%s_%s_%s'%(p,r,s+'Down','proj'+axis))
+                down = hist2array(down_hist)
 
-                up.SetLineStyle(9)
-                down.SetLineStyle(9)
-                up.SetLineWidth(2)
-                down.SetLineWidth(2)
+                # Begin plotting
+                labels = ['Nominal', r'$+1\sigma$', r'$-1\sigma$']
+                colors = ['black', 'red', 'blue']
+                styles = ['solid', 'dashed', 'dashed']
+                histos = [nominal, up, down]
 
-                nominal,up,down = set_hist_maximums([nominal,up,down])
-                nominal.SetXTitle(getattr(binning,axis.lower()+'title'))
+                plt.style.use([hep.style.CMS])
+                fig, ax = plt.subplots(figsize=(12, 8), dpi=200)
+                hep.cms.text("WiP",loc=1)
+                ax.set_title(f'{p}, {s}', pad=12)
+                hep.histplot(histos, edges, stack=False, ax=ax, label=labels, histtype='step', linestyle=styles, color=colors)
+                handles, labelsproj = ax.get_legend_handles_labels()
+                ax.set_xlabel(getattr(binning,axis.lower()+'title'))
+                ax.set_ylabel('Events')
+                plt.legend(loc='best')
 
-                nominal.SetTitle('')
-                nominal.GetXaxis().SetTitleOffset(1.0)
-                nominal.GetXaxis().SetTitleSize(0.05)
-                c.SetRightMargin(0.16)
+                outname = f'{twoD.tag}/UncertPlots/Uncertainty_{p}_{r}_{s}_proj{axis}.png'
+                print(f'[2DAlphabet.plot] INFO: Plotting histogram\n\t{outname}')
 
-                nominal.Draw('hist')
-                up.Draw('same hist')
-                down.Draw('same hist')
-
-                c.Print(twoD.tag+'/UncertPlots/Uncertainty_%s_%s_%s_%s.png'%(p,r,s,'proj'+axis),'png')
+                plt.savefig(outname)
+                plt.close() # free up memory
 
 def _make_pull_plot(data, bkg, preVsPost=False):
     pull = data.Clone(data.GetName()+"_pull")
