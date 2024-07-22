@@ -4,19 +4,43 @@ from collections import defaultdict
 from contextlib import contextmanager
 
 # Function stolen from https://root-forum.cern.ch/t/trying-to-convert-rdf-generated-histogram-into-numpy-array/53428/3
-def hist2array(hist):
+def hist2array(hist, include_overflow=False, return_errors=False):
     '''Create a numpy array from a ROOT histogram without external tools like root_numpy.
 
     Args:
         hist (TH1): Input ROOT histogram
+        include_overflow (bool, optional): Whether or not to include the under/overflow bins. Defaults to False. 
+        return_errs (bool, optional): Whether or not to return an array containing the sum of the weights squared. Defaults to False.
 
     Returns:
         arr (np.ndarray): Array representing the ROOT histogram
+        errors (np.ndarray): Array containing the sqrt of the sum of weights squared
     '''
     hist.BufferEmpty()
     root_arr = hist.GetArray()
-    arr = np.ndarray((hist.GetNbinsX(),), dtype=np.float64, buffer=root_arr, order='C')
-    return arr
+    if isinstance(hist, ROOT.TH1):
+        shape = (hist.GetNbinsX() + 2,)
+    elif isinstance(hist, ROOT.TH2):
+        shape = (hist.GetNbinsY() + 2, hist.GetNbinsX() + 2)
+    elif isinstance(hist, ROOT.TH3):
+        shape = (hist.GetNbinsZ() + 2, hist.GetNbinsY() + 2, hist.GetNbinsX() + 2)
+    else:
+        raise TypeError(f'hist must be an instance of ROOT.TH1, ROOT.TH2, or ROOT.TH3')
+
+    # Get the array and, optionally, errors
+    arr = np.ndarray(shape, dtype=np.float64, buffer=root_arr, order='C')
+    if return_errors:
+        errors = np.sqrt(np.ndarray(shape, dtype='f8', buffer=hist.GetSumw2().GetArray()))
+
+    if not include_overflow:
+        arr = arr[tuple([slice(1, -1) for idim in range(arr.ndim)])]
+        if return_errors:
+            errors = errors[tuple([slice(1, -1) for idim in range(errors.ndim)])]
+
+    if return_errors:
+        return arr, errors
+    else:
+        return arr
 
 # Function stolen from https://stackoverflow.com/questions/9590382/forcing-python-json-module-to-work-with-ascii
 def open_json(f):

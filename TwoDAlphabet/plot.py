@@ -1,9 +1,11 @@
 import glob
 import ROOT, os, warnings, pandas, math, time
 from PIL import Image
+from collections import OrderedDict
 from TwoDAlphabet.helpers import set_hist_maximums, execute_cmd, cd, hist2array
 from TwoDAlphabet.binning import stitch_hists_in_x, convert_to_events_per_unit, get_min_bin_width
 from TwoDAlphabet.ext import tdrstyle, CMS_lumi
+from TwoDAlphabet.plotstyle import * # dictionaries containing plotting styles for mplhep
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -88,7 +90,12 @@ class Plotter(object):
         hslice.GetXaxis().SetTitle(xtitle)
         hslice.GetYaxis().SetTitle(ytitle)
 
-        color = int(color) #ROOT call in C++ sometimes cannot convert it to int
+        # Obtain the ROOT color code from the dictionary defined in TwoDAlphabet.plotstyle
+        if color not in mpl_to_root_colors.keys():
+            available_colors = '", "'.join(mpl_to_root_colors.keys())
+            raise ValueError(f'Color "{color}" not defined. Please add the ROOT TColor code to the "mpl_to_root_colors" dictionary defined in TwoDAlphabet.plotstyle. Available default colors are: "{available_colors}"')
+        else:
+            color = int(mpl_to_root_colors[color]) #ROOT call in C++ sometimes cannot convert it to int
 
         if proc_type == 'BKG':
             hslice.SetFillColor(color)
@@ -139,7 +146,8 @@ class Plotter(object):
                     proc_type = self.ledger.GetProcessType(process)
                     proc_title = self.ledger.GetProcessTitle(process)
                 else:
-                    color = ROOT.kBlack
+                    #color = ROOT.kBlack
+                    color = 'black'
                     proc_type = 'TOTAL'
                     proc_title = 'TotalBkg'
 
@@ -255,7 +263,88 @@ class Plotter(object):
 
             make_can('{d}/{p}_{r}_2D'.format(d=self.dir,p=process,r=region), [out_file_name%('prefit')+'.png', out_file_name%('postfit')+'.png'])
 
-    def plot_projections(self, prefit=False):
+    def plot_projections(self, prefit=False, lumiText=r'$138 fb^{-1}$ (13 TeV)', extraText='Preliminary', units='GeV'):
+        '''Plot comparisons of data and the post-fit background model and signal
+        using the 1D projections. Canvases are grouped based on projection axis.
+        The canvas rows are separate selection regions while the columns
+        are the different slices of the un-plotted axis.
+
+        Args:
+        prefit (bool): If True, will plot the prefit distributions instead of postfit. Defaults to False.
+        Returns:
+            None
+        '''
+        axes = pandas.DataFrame() # Book a dataframe for creating a full group of plots
+        for region, group in self.df.groupby('region'):
+            binning, _ = self.twoD.GetBinningFor(region)
+
+            # Make both regular and logarithmic y-axis plots
+            for logyFlag in [False, True]:
+                # Get reduced dataframes for all backgrounds and the signals
+                ordered_bkgs = self._order_df_on_proc_list(
+                                            group[group.process_type.eq('BKG')], proc_type='BKG',
+                                            alphaBottom=(not logyFlag))
+                signals = group[group.process_type.eq('SIGNAL')]
+
+                for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
+                    for islice in range(3):
+                        projn     = f'{proj}{islice}'
+                        sig_projn = projn
+                        if self.twoD.options.plotPrefitSigInFitB and self.fittag == 'b':
+                            sig_projn = projn.replace('postfit','prefit') # Plot prefit signal in b-only plots
+
+                        # TH1s representing the sum of all data and background histograms in the workspace for this projection and slice
+                        this_data =      self.Get(row=group.loc[group.process_type.eq('DATA')].iloc[0], hist_type=projn)
+                        this_totalbkg =  self.Get(row=group.loc[group.process_type.eq('TOTAL')].iloc[0], hist_type=projn)
+                        # Lists of individual TH1s comprising all bkg and sig histograms for this projection and slice.
+                        these_bkgs =    [self.Get(row=ordered_bkgs.iloc[irow], hist_type=projn) for irow in range(ordered_bkgs.shape[0])]
+                        these_signals = [self.Get(row=signals.iloc[irow], hist_type=sig_projn) for irow in range(signals.shape[0])]
+
+                        slice_edges = (
+                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice],
+                            binning.xtitle if 'y' in proj else binning.ytitle,
+                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice+1],
+                        )
+                        slice_str = '%s < %s < %s'%slice_edges
+
+                        out_pad_name = f'{self.dir}/base_figs/{projn}_{region}{"" if not logyFlag else "_logy"}'
+
+                        # Produce a matplotlib axis containing the full data + stacked bkg histogram for this projection and slice
+                        make_ax_1D(
+                            out_pad_name, 
+                            binning, 
+                            data=this_data, 
+                            bkgs=these_bkgs, 
+                            signals=these_signals, 
+                            totalBkg=this_totalbkg, 
+                            logyFlag=logyFlag, 
+                            prefit=prefit,          # whether to draw prefit or postfit
+                            subtitle=slice_str,     # opposite axis slices (top left)
+                            lumiText=lumiText,      # (top right)
+                            extraText=extraText,    # top left, above pad, next to "CMS"
+                            units=units,
+                            savePDF=False,
+                            savePNG=True
+                        )
+
+                        # Append projection plot to master dataframe
+                        axes = pandas.concat([axes, pandas.DataFrame([{'ax':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}])], ignore_index=True)
+
+        # Create a canvas with the full set of projection plots
+        for logy in ['', '_logy']:
+            for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
+                these_axes = axes.loc[axes.proj.str.contains(proj)]
+                if logy == '':
+                    these_axes = these_axes.loc[these_axes.logy.eq(False)]
+                else:
+                    these_axes = these_axes.loc[these_axes.logy.eq(True)]
+
+                these_axes = these_axes.sort_values(by=['region','proj'])['ax'].to_list()
+                out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
+                make_can(out_can_name, these_axes)
+
+
+    def plot_projections_OLD(self, prefit=False):
         '''Plot comparisons of data and the post-fit background model and signal
         using the 1D projections. Canvases are grouped based on projection axis.
         The canvas rows are separate selection regions while the columns 
@@ -361,107 +450,6 @@ class Plotter(object):
 
     def plot_transfer_funcs(self):
         raise NotImplementedError()
-        # # Need to sample the space to get the Rp/f with proper errors (1000 samples)
-        # rpf_xnbins = len(self.fullXbins)-1
-        # rpf_ynbins = len(self.newYbins)-1
-        # if self.rpfRatio == False: rpf_zbins = [i/1000000. for i in range(0,1000001)]
-        # else: rpf_zbins = [i/1000. for i in range(0,5001)]
-        # rpf_samples = TH3F('rpf_samples','rpf_samples',rpf_xnbins, array.array('d',self.fullXbins), rpf_ynbins, array.array('d',self.newYbins), len(rpf_zbins)-1, array.array('d',rpf_zbins))# TH3 to store samples
-        # sample_size = 500
-
-        # # Collect all final parameter values
-        # param_final = fit_result.floatParsFinal()
-        # coeffs_final = RooArgSet()
-        # for v in self.rpf.funcVars.keys():
-        #     coeffs_final.add(param_final.find(v))
-
-        # # Now sample to generate the Rpf distribution
-        # for i in range(sample_size):
-        #     sys.stdout.write('\rSampling '+str(100*float(i)/float(sample_size)) + '%')
-        #     sys.stdout.flush()
-        #     param_sample = fit_result.randomizePars()
-
-        #     # Set params of the Rpf object
-        #     coeffIter_sample = param_sample.createIterator()
-        #     coeff_sample = coeffIter_sample.Next()
-        #     while coeff_sample:
-        #         # Set the rpf parameter to the sample value
-        #         if coeff_sample.GetName() in self.rpf.funcVars.keys():
-        #             self.rpf.setFuncParam(coeff_sample.GetName(), coeff_sample.getValV())
-        #         coeff_sample = coeffIter_sample.Next()
-
-        #     # Loop over bins and fill
-        #     for xbin in range(1,rpf_xnbins+1):
-        #         for ybin in range(1,rpf_ynbins+1):
-        #             bin_val = 0
-
-        #             thisXCenter = rpf_samples.GetXaxis().GetBinCenter(xbin)
-        #             thisYCenter = rpf_samples.GetYaxis().GetBinCenter(ybin)
-
-        #             if self.recycleAll:
-        #                 # Remap to [-1,1]
-        #                 x_center_mapped = (thisXCenter - self.newXbins['LOW'][0])/(self.newXbins['HIGH'][-1] - self.newXbins['LOW'][0])
-        #                 y_center_mapped = (thisYCenter - self.newYbins[0])/(self.newYbins[-1] - self.newYbins[0])
-
-        #                 # And assign it to a RooConstVar 
-        #                 x_const = RooConstVar("ConstVar_x_"+c+'_'+str(xbin)+'-'+str(ybin)+'_'+self.name,"ConstVar_x_"+c+'_'+str(xbin)+'-'+str(ybin)+'_'+self.name,x_center_mapped)
-        #                 y_const = RooConstVar("ConstVar_y_"+c+'_'+str(xbin)+'-'+str(ybin)+'_'+self.name,"ConstVar_x_"+c+'_'+str(xbin)+'-'+str(ybin)+'_'+self.name,y_center_mapped)
-                        
-        #                 # Now get the Rpf function value for this bin 
-        #                 self.allVars.append(x_const)
-        #                 self.allVars.append(y_const)
-        #                 self.rpf.evalRpf(x_const, y_const,xbin,ybin)
-
-        #             # Determine the category
-        #             if thisXCenter > self.newXbins['LOW'][0] and thisXCenter < self.newXbins['LOW'][-1]: # in the LOW category
-        #                 thisxcat = 'LOW'
-        #             elif thisXCenter > self.newXbins['SIG'][0] and thisXCenter < self.newXbins['SIG'][-1]: # in the SIG category
-        #                 thisxcat = 'SIG'
-        #             elif thisXCenter > self.newXbins['HIGH'][0] and thisXCenter < self.newXbins['HIGH'][-1]: # in the HIGH category
-        #                 thisxcat = 'HIGH'
-
-        #             bin_val = self.rpf.getFuncBinVal(thisxcat,xbin,ybin)
-
-        #             rpf_samples.Fill(thisXCenter,thisYCenter,bin_val)
-
-        # print ('\n')
-        # rpf_final = TH2F('rpf_final','rpf_final',rpf_xnbins, array.array('d',self.fullXbins), rpf_ynbins, array.array('d',self.newYbins))
-        # # Now loop over all x,y bin in rpf_samples, project onto Z axis, 
-        # # get the mean and RMS and set as the bin content and error in rpf_final
-        # for xbin in range(1,rpf_final.GetNbinsX()+1):
-        #     for ybin in range(1,rpf_final.GetNbinsY()+1):
-        #         temp_projz = rpf_samples.ProjectionZ('temp_projz',xbin,xbin,ybin,ybin)
-        #         rpf_final.SetBinContent(xbin,ybin,temp_projz.GetMean())
-        #         rpf_final.SetBinError(xbin,ybin,temp_projz.GetRMS())
-
-        # rpf_final.SetTitle('')
-        # rpf_final.GetXaxis().SetTitle(self.xVarTitle)
-        # rpf_final.GetYaxis().SetTitle(self.yVarTitle)
-        # rpf_final.GetZaxis().SetTitle('R_{P/F}' if self.rpfRatio == False else 'R_{Ratio}')
-        # rpf_final.GetXaxis().SetTitleSize(0.045)
-        # rpf_final.GetYaxis().SetTitleSize(0.045)
-        # rpf_final.GetZaxis().SetTitleSize(0.045)
-        # rpf_final.GetXaxis().SetTitleOffset(1.2)
-        # rpf_final.GetYaxis().SetTitleOffset(1.5)
-        # rpf_final.GetZaxis().SetTitleOffset(1.3)
-
-        # rpf_c = TCanvas('rpf_c','Post-fit R_{P/F}',1000,700)
-        # CMS_lumi.lumiTextSize = 0.75
-        # CMS_lumi.cmsTextSize = 0.85
-        # CMS_lumi.extraText = 'Preliminary'
-        # CMS_lumi.CMS_lumi(rpf_c, self.year, 11)
-        # rpf_c.SetRightMargin(0.2)
-        # rpf_final.Draw('colz')
-        # rpf_c.Print(self.projPath+'plots/fit_'+fittag+'/postfit_rpf_colz.pdf','pdf')
-        # rpf_final.Draw('surf')
-        # rpf_c.Print(self.projPath+'plots/fit_'+fittag+'/postfit_rpf_surf.pdf','pdf')
-        # rpf_final.Draw('pe')
-        # rpf_c.Print(self.projPath+'plots/fit_'+fittag+'/postfit_rpf_errs.pdf','pdf')
-
-        # rpf_file = TFile.Open(self.projPath+'/plots/postfit_rpf_fit'+fittag+'.root','RECREATE')
-        # rpf_file.cd()
-        # rpf_final.Write()
-        # rpf_file.Close()
 
 def _save_pad_generic(outname, pad, ROOTout, savePDF, savePNG):
     if isinstance(ROOTout, ROOT.TFile):
@@ -525,7 +513,180 @@ def make_pad_2D(outname, hist, style='lego', logzFlag=False, ROOTout=None,
 
     return pad
 
-def make_pad_1D(outname, data, bkgs=[], signals=[], title='', subtitle='',
+
+def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='',
+            totalBkg=None, logyFlag=False, ROOTout=None, savePDF=False, savePNG=False,
+            dataOff=False, prefit=False, datastyle='pe X0', year=1, addSignals=True, 
+            lumiText=r'$138 fb^{-1} (13 TeV)$', extraText='Preliminary', units='GeV'):
+    '''Create a matplotlib.axis.Axis object holding a 1D plot with standardized CMS formatting conventions
+    Args:
+        outname (str): Output file path + name.
+        binning (Binning): TwoDAlphabet binning object for the given region from which to obtain binning info.
+        data (TH1): Data histogram.
+        bkgs ([TH1]): List of background histograms (to be stacked).
+        signals ([TH1]): List of signal histograms.
+        title (str, optional): Title of plot. Only applicable if bkgs is empty. Defaults to ''.
+        subtitle (str, optional): Subtitle text for physics information (like slice ranges). Defaults to ''.
+        totalBkg (TH1, optional): Total background estimate from fit. Used to get total background uncertianty. Defaults to None.
+        logyFlag (bool, optional): Make log y-axis. Defaults to False.
+        savePDF (bool, optional): Save to PDF. Defaults to True.
+        savePNG (bool, optional): Save to PNG. Defaults to True.
+        dataOff (bool, optional): Turn off the data from plotting. Defaults to False.
+        preVsPost (bool, optional): Incoming data histogram is postfit distribution of non-data process. If True, renames legend entry. See plot_pre_vs_post().
+        addSignals (bool, optional): If True, multiple signals will be added together and plotted as one. If False, signals are plotted individually. Defaults to True.
+        extraText (str, optional): Prepended to the CMS subtext. Defaults to 'Preliminary'.
+        units (str, optional): Units of measurement for x- and y-axes. Defaults to 'GeV'.
+
+    Returns:
+        ax (matplotlib.axis.Axis): Output axis object for further manipulation.
+    '''
+    # Convert all histograms to numpy arrays. First, determine the bin edges
+    projn  = outname.split('/')[-1].split('_')[1].split('proj')[-1][0]
+    islice = outname.split('/')[-1].split('_')[1].split('proj')[-1][1]; islice = int(islice)
+    if projn == 'x':
+        xbins = binning.xbinByCat
+        edges = np.array(xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH'])
+    else:
+        edges = np.array(binning.ybinList)
+
+    # Convert all unique bkg and signal hists to arrays and group by process. They will come already ordered, so keep the ordering
+    bkgDict = OrderedDict()
+    sigDict = OrderedDict()
+    bkgNames = list(dict.fromkeys([hist.GetTitle().split(',')[0] for hist in bkgs]))
+    sigNames = list(dict.fromkeys([hist.GetTitle().split(',')[0] for hist in signals]))
+    # Replace the ROOT latex "#" with standard latex "\" escape character for python rstring
+    bkgNamesLatex = [r'${}$'.format(bkgName.replace("#","\\")) for bkgName in bkgNames]
+    sigNamesLatex = [r'${}$'.format(sigName.replace("#","\\")) for sigName in sigNames]
+    # Sum the common backgrounds and signals
+    for bkg in bkgNames:
+        bkg_arrs = [hist2array(i, return_errors=True)[0] for i in bkgs if bkg in i.GetTitle()]
+        bkg_errs = [hist2array(i, return_errors=True)[1] for i in bkgs if bkg in i.GetTitle()]
+        bkgDict[f'{bkg}_arr'] = sum(bkg_arrs)
+        bkgDict[f'{bkg}_err'] = sum(bkg_errs)
+    for sig in sigNames:
+        sigDict[f'{sig}_arr'] = sum([hist2array(i) for i in signals if sig in i.GetTitle()]) # ignore uncertainty
+    # For the colors, we need to translate from ROOT TColor to matplotlib 
+    bkgColors = list(dict.fromkeys([hist.GetFillColor() for hist in bkgs]))
+    bkgColors = [root_to_matplotlib_color(TColor) for TColor in bkgColors]
+    sigColors = list(dict.fromkeys([hist.GetLineColor() for hist in signals]))  # signals have no fill, only line color
+    sigColors = [root_to_matplotlib_color(TColor) for TColor in sigColors]
+
+    # Get the data array and total bkg
+    data_arr = hist2array(data); data_arr = np.array([int(i) for i in data_arr]) # hist2array converts to floats which may leave very small differences when converting TH1 (int) -> array (float). This fixes it
+    if totalBkg:
+        totalBkg_arr, totalBkg_err = hist2array(totalBkg, return_errors=True)
+
+    '''
+    # Now convert hist -> array 
+    data_arr = hist2array(data); data_arr = np.array([int(i) for i in data_arr]) # hist2array converts to floats which may leave very small differences when converting TH1 (int) -> array (float). This fixes it 
+    bkg_err_arrs = [hist2array(bkg,return_errors=True) for bkg in bkgs]
+    bkg_arrs = [bkg_err_arrs[i][0] for i in range(len(bkg_err_arrs))]   # Background histogram arrays
+    bkg_errs = [bkg_err_arrs[i][1] for i in range(len(bkg_err_arrs))]   # Background error arrays
+    sig_arrs = [hist2array(sig) for sig in signals]
+    if totalBkg:
+        totalBkg_arr, totalBkg_err = hist2array(totalBkg, return_errors=True)
+    '''
+
+    # Begin plotting
+    plt.style.use([hep.style.CMS])
+    fig, (ax, rax) = plt.subplots(2, 1, sharex=True, **ratio_fig_style) # ax is the stacked plot, rax contains the ratio plot
+    #fig.subplots_adjust(hspace=0.07)
+    fig.subplots_adjust(hspace=0.0)
+
+    bkg_stack = np.vstack([arr for key, arr in bkgDict.items() if '_arr' in key]) # stack all unique background processes
+    # depending on step option ('pre' or 'post'), the last bin needs be concatenated on one side, so that the edge bin is drawn (annoying)
+    bkg_stack = np.hstack([bkg_stack, bkg_stack[:,-1:]])
+    bkg_stack = np.hstack([bkg_stack])
+
+    '''
+    print(bkgDict['Multijet_arr'])
+    print(bkg_stack)
+    for i in range(1,bkgs[0].GetNbinsX()+1):
+        print(bkgs[0].GetBinContent(i))
+    exit()
+    '''
+
+    '''
+    print(outname)
+    print(edges)
+    print(edges[1:])
+    print(edges[:-1])
+    print(bkg_stack[0])
+    print(totalBkg_err)
+    '''
+
+    ax.stackplot(edges, bkg_stack, labels=bkgNamesLatex, colors=bkgColors, step='post', **stack_style)
+    unc = totalBkg_err # the hist2array() call returns the sqrt of the sumw2 for the histogram
+    unc = np.hstack([unc, unc[-1]]) # concatenation of last bin so that edge bin is drawn
+    #unc = np.hstack([unc])
+    ax.fill_between(x=edges, y1=bkg_stack.sum(axis=0)-unc, y2=bkg_stack.sum(axis=0)+unc, label='Stat. Unc.', step='post', **hatch_style)
+    bin_centers = (edges[:-1] + edges[1:])/2
+    # Determine if we have variable binning, and if so, add the CMS-required horizontal bars to denote bin width
+    if len(np.unique(np.diff(edges))) > 1: # Detected variable bin widths
+        xerrs = (edges[1:]-edges[:-1])/2
+    else:
+        xerrs = None
+    ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
+
+    # Plot signals
+    for i, sig in enumerate(sigNames):
+        sigarr = sigDict[f'{sig}_arr']
+        print(sigarr)
+        print(sigNamesLatex[i])
+        print(sigColors[i])
+        ax.step(x=edges, y=np.hstack([sigarr, sigarr[-1]]), where='post', color=sigColors[i], label=sigNamesLatex[i])
+
+
+    ax.set_ylim(0, totalBkg_arr.max()*1.3) # allow some space above the maximum value to add the slice text
+    ax.set_ylabel('Events / bin')
+    ax.legend()
+    ax.autoscale(axis='x', tight=True)
+    ax.margins(x=0) # remove white space at left and right margins of plot 
+
+    if logyFlag: ax.set_yscale("log")
+
+    hep.cms.label(loc=0, ax=ax, data = not dataOff, label=extraText, rlabel='') # CMS + label, where label is typically “Preliminary” “Supplementary”, “Private Work” or “Work in Progress”
+    hep.cms.lumitext(lumiText, ax=ax)                       # Typically luminosity + sqrt(s)
+    # Can't use the hep.cms.text() wrapper without "CMS" being added, so add the subtitle (slice) text manually
+    subtitle = r'${}$ {}'.format(subtitle.replace('#','\\'), units)
+    ax.text(0.05, 0.95, subtitle, ha='left', va='top', fontsize='small', transform=ax.transAxes)
+
+ 
+    # ratio
+    #rax.fill_between(x=edges, y1=1-unc, y2=1+unc, step='post', **shaded_style)
+    #rax.errorbar(x=bin_centers, y=data_arr/totalBkg_arr, yerr=np.sqrt(data_arr)/totalBkg_err, **errorbar_style)
+    #rax.set_ylim(0, 2)
+    #rax.set_ylabel('Obs. / Pred.')
+    #rax.set_xlabel('mass [GeV]')
+    #rax.autoscale(axis='x', tight=True)
+
+    # ratio
+    dataMinusBkg = data_arr - totalBkg_arr
+    sigmas = np.sqrt(np.sqrt(data_arr)*np.sqrt(data_arr) + totalBkg_err*totalBkg_err)
+    sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
+    #widths = [edges[i]-edges[i-1] for i in range(1, len(edges))]
+    widths = np.diff(edges)
+    rax.bar(bin_centers, dataMinusBkg/sigmas, width=widths, color='gray')
+    rax.set_ylim(-3,3)
+    rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
+    axisTitle = binning.xtitle if projn == 'x' else binning.ytitle
+    axisTitle = axisTitle.replace("#","\\")
+    rax.set_xlabel(r'${}$ [{}]'.format(axisTitle, units))
+    rax.autoscale(axis='x', tight=True)
+    rax.margins(x=0)
+
+    if savePDF:
+        plt.savefig(f'{outname}.pdf')
+    if savePNG:
+        plt.savefig(f'{outname}.png')
+    if ((not savePDF) and (not savePNG)):
+        print(f'WARNING: plot "{outname}" has not been saved.')
+
+    print(f'Plotting {outname}')
+    plt.close()
+    # return ax, rax      ????????????
+
+def make_pad_1D_OLD(outname, data, bkgs=[], signals=[], title='', subtitle='',
             totalBkg=None, logyFlag=False, ROOTout=None, savePDF=False, savePNG=False,
             dataOff=False, preVsPost=False, datastyle='pe X0', year=1, addSignals=True, extraText='Preliminary'):
     '''Make a pad holding a 1D plot with standardized formatting conventions.

@@ -3,6 +3,7 @@ import ROOT, json, os, pandas, re, warnings, itertools
 from numpy import nan
 import pprint
 pp = pprint.PrettyPrinter(indent=4)
+from TwoDAlphabet.plotstyle import mpl_to_root_colors, root_to_matplotlib_color
 from TwoDAlphabet.helpers import copy_update_dict, open_json, parse_arg_dict, replace_multi
 from TwoDAlphabet.binning import Binning, copy_hist_with_new_bins, get_bins_from_hist
 
@@ -411,7 +412,11 @@ class OrganizedHists():
                     h.SetName(row.out_histname)
 
                 h.SetTitle(row.out_histname)
-                h.SetFillColor(row.color)
+                if row.color not in mpl_to_root_colors.keys():
+                    available_colors = '", "'.join(mpl_to_root_colors.keys())
+                    raise ValueError(f'Color "{color}" not defined. Please add the ROOT TColor code to the "mpl_to_root_colors" dictionary defined in TwoDAlphabet.plotstyle. Available default colors are: "{available_colors}"')
+                else:
+                    h.SetFillColor(mpl_to_root_colors[row.color])
 
                 self.file.WriteTObject(h, row.out_histname)
                 self.CreateSubRegions(h, binning)
