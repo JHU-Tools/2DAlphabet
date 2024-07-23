@@ -100,10 +100,13 @@ class Config:
         json.dump(self.config,file_out,indent=2,sort_keys=True)
         file_out.close()
 
-    def FullTable(self):
+    def FullTable(self,verbose=False):
         '''Generate full table of processes, regions, and systematic variations
         to account for, including relevant information for each. The table is
         returned as a pandas DataFrame for convenient manipulation.
+
+        Args:
+            verbose (bool): If True, prints the regions, processes, and systematics dataframe tables to .txt files.
 
         Returns:
             pandas.DataFrame: Table
@@ -112,9 +115,10 @@ class Config:
         processes = self._processTable()
         systematics = self._systematicsTable()
 
-        regions.to_string('regions.txt')
-        processes.to_string('processes.txt')
-        systematics.to_string('systematics.txt')
+        if verbose:
+            regions.to_string('regions.txt')
+            processes.to_string('processes.txt')
+            systematics.to_string('systematics.txt')
 
         for p,group in processes.groupby(processes.index):
             if group.title.nunique() > 1:
