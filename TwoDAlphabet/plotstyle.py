@@ -24,7 +24,7 @@ errorbar_style = {
     'linestyle': 'none',
     'marker': '.',      # display a dot for the datapoint
     'elinewidth': 2,    # width of the errorbar line
-    'markersize': 10,   # size of the error marker
+    'markersize': 20,   # size of the error marker
     'capsize': 0,       # size of the caps on the errorbar (0: no cap fr)
     'color': 'k',       # black 
 }
