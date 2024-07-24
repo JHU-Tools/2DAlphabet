@@ -316,7 +316,6 @@ class CondorRunner():
         self.rootfile_tarball_path = eosRootfileTarball
         self.cmssw = os.environ['CMSSW_BASE'].split('/')[-1]
         if not os.path.exists('notneeded/'): execute_cmd('mkdir notneeded')
-        
         self.env_tarball_path = make_env_tarball(remakeEnv)
         self.pkg_tarball_path = self._make_pkg_tarball(toPkg) if toPkg != None else ''
         self.run_script_path = self._make_run_script()
@@ -338,7 +337,9 @@ class CondorRunner():
         start_dir = os.getcwd()
         out_dir = start_dir+'/notneeded'
         out_path = '%s/%s_input.tgz'%(out_dir,self.name)
-        with cd(os.environ['CMSSW_BASE']+'/src'):
+        print(os.getcwd())
+        #with cd(os.environ['CMSSW_BASE']+'/src'):
+        with cd("../.."): #We will be in tag/signal_name directory and want to zip tag directory
             if os.path.exists(out_path):
                 execute_cmd('rm '+out_path)
             print ('Making package tarball %s.tgz'%self.name)
@@ -393,9 +394,9 @@ def make_env_tarball(makeEnv=True):
             if os.path.exists('%s_env.tgz'%cmssw):
                 execute_cmd('rm %s_env.tgz'%cmssw)
             print ('Making env tarball %s_env.tgz...'%cmssw)
-            execute_cmd('tar --exclude-caches-all --exclude-vcs --exclude-caches-all --exclude-vcs -czf {cmssw}_env.tgz {cmssw} --exclude=tmp --exclude=".scram" --exclude=".SCRAM"'.format(cmssw=cmssw))
+            execute_cmd('tar --exclude-caches-all --exclude-vcs --exclude-caches-all --exclude-vcs  --exclude={cmssw}/tmp --exclude={cmssw}/.scram --exclude={cmssw}/.SCRAM -czvf {cmssw}_env.tgz {cmssw}'.format(cmssw=cmssw))
             print ('Done')
-            execute_cmd('xrdcp {cmssw}_env.tgz {out}'.format(cmssw=cmssw,out=out_eos_path))
+            execute_cmd('xrdcp -f {cmssw}_env.tgz {out}'.format(cmssw=cmssw,out=out_eos_path))
     
     return out_eos_path
 
