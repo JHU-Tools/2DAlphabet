@@ -477,8 +477,8 @@ class TwoDAlphabet:
                     ) for _ in range(njobs)
                 ]
 
-        if not makeEnv:
-            print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True')
+            if not makeEnv:
+                print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True')
 
             condor = CondorRunner(
                 name = self.tag+'_'+subtag+'_gof_toys',
@@ -559,15 +559,15 @@ class TwoDAlphabet:
             if condor:
                 if not makeEnv:
                     print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run Limit() with makeEnv=True')
-                    condor = CondorRunner(
-                        name=self.tag+'_'+subtag+'_limit',
-                        primaryCmds=[limit_cmd],
-                        toPkg=self.tag+'/',
-                        toGrab=run_dir+'/higgsCombineTest.AsymptoticLimits.mH120.root',
-                        eosRootfileTarball=eosRootfiles,
-                remakeEnv=makeEnv
-                    )
-                    condor.submit()
+                condor = CondorRunner(
+                    name=self.tag+'_'+subtag+'_limit',
+                    primaryCmds=[limit_cmd],
+                    toPkg=self.tag+'/',
+                    toGrab=run_dir+'/higgsCombineTest.AsymptoticLimits.mH120.root',
+                    eosRootfileTarball=eosRootfiles,
+            remakeEnv=makeEnv
+                )
+                condor.submit()
                 
     def Impacts(self, subtag, rMin=-15, rMax=15, cardOrW='initialFitWorkspace.root --snapshotName initialFit', defMinStrat=0, extra=''):
         # param_str = '' if setParams == {} else '--setParameters '+','.join(['%s=%s'%(p,v) for p,v in setParams.items()])
