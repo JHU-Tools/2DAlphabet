@@ -394,7 +394,7 @@ def make_env_tarball(makeEnv=True):
             if os.path.exists('%s_env.tgz'%cmssw):
                 execute_cmd('rm %s_env.tgz'%cmssw)
             print ('Making env tarball %s_env.tgz...'%cmssw)
-            execute_cmd('tar --exclude-caches-all --exclude-vcs --exclude-caches-all --exclude-vcs  --exclude={cmssw}/tmp --exclude={cmssw}/.scram --exclude={cmssw}/.SCRAM -czvf {cmssw}_env.tgz {cmssw}'.format(cmssw=cmssw))
+            execute_cmd('tar --exclude-caches-all --exclude-vcs --exclude-caches-all --exclude-vcs --exclude={cmssw}/src/HiggsAnalysis/CombinedLimit/docs --exclude={cmssw}/src/HiggsAnalysis/CombinedLimit/data/benchmarks --exclude={cmssw}/src/HiggsAnalysis/CombinedLimit/data/tutorials --exclude={cmssw}/tmp --exclude={cmssw}/.scram --exclude={cmssw}/.SCRAM -czvf {cmssw}_env.tgz {cmssw}'.format(cmssw=cmssw))
             print ('Done')
             execute_cmd('xrdcp -f {cmssw}_env.tgz {out}'.format(cmssw=cmssw,out=out_eos_path))
     
