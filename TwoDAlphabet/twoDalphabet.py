@@ -326,25 +326,62 @@ class TwoDAlphabet:
             # systematic_analyzer_cmd = 'python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/systematicsAnalyzer.py card.txt --all -f html > systematics_table.html'
             # execute_cmd(systematic_analyzer_cmd)    
 
-    def StdPlots(self, subtag, ledger=None, prefit=False):
+    def StdPlots(self, subtag, ledger=None, plotSplusB=True, vtol=0.3, stol=0.1, vtol2=2.0, stol2=0.5, regex='^(?!.*(_bin_|_par))', corrthresh=0.0, corrtext=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[]):
         '''
         Args:
-            prefit (bool): If True, plots the prefit distributions instead of postfit. Defaults to False.
+            subtag (str): 'b' or 's' to denote background-only or signal-plus-background fit result.
+            ledger (TwoDAlphabet.ledger): Ledger object containing the information needed for plotting the specific fit result.
+            plotSplusB (bool): If False, plots background-only fit results. If True, plots the signal-plus-background fit results as well. Useful
+                               if fitting a control region where the s+b result is not relevant and/or fit didn't converge. Defaults to True. 
+            vtol (float): Report nuisances whose value changes by more than this number of sigmas
+            stol (float): Report nuisances whose sigma changes by more than this amount
+            vtol2 (float): Report severely nuisances whose value changes by more than this number of sigmas
+            stol2 (float): Report severely nuisances whose sigma changes by more than this amount
+            regex (str): Include only nuisance parameters that passes the following regex filter. Defaults to a regular expression that omits the 
+                         unconstrained "*_bin_*" parameters representing the data-driven estimate and "_par*" parameters representing the 
+                         unconstrained transfer function parameters.
+            corrthresh (float): Threshold for nuisance parameter value to be included in the correlation matrix. Defaults to 0.0 (all NPs included)
+            corrtext (bool): Whether or not to write the correlation value to each point in the correlation matrix. Defaults to False, since often 
+                             there are too many parameters and the values look ugly or even useless due to crowding.
+            lumiText (str): LaTeX-formatted string containing luminosity information. Ensure that a raw string is passed and that all latex is wrapped
+                            in $$. Defaults to Run2 conditions.
+            extraText (str): Additional text to place after experiment (CMS) text. Defaults to "Preliminary"
+            subtitles ({str:str}): Dict of raw strings corresponding to each region specified in the JSON to be placed underneath axis slice text in 
+                                   top left corner of pad. If multiple titles are desired, separate with semicolon character.
+                                   Example: 
+                                        {
+                                            "SR_fail": r"$ParticleNet_{TvsQCD}$ Pass;$ParticleNetMD_{Xbb}$ Fail", 
+                                            "SR_pass": r"$ParticleNet_{TvsQCD}$ Pass;$ParticleNetMD_{Xbb}$ Pass"
+                                        }
+            regionsToGroup ([[str]]):
+                List of list of strings representing the desired regions to group. For example if the fit involved
+                four regions: CR_fail, CR_pass, SR_fail, SR_pass then 2DAlphabet will try to plot all
+                (4 regions) x (3 slices) = 12 plots on the same page, which is greater than the number that can be
+                plotted. Instead, pass regionsToGroup = [['CR'],['SR']] to have the CR and SR plotted on separate
+                2x3 canvases.
+                If you wanted to plot, e.g. SR_fail, SR_pass, and CR_pass, pass in the following list of lists:
+                    [['CR'], ['SR'], ['SR_fail','SR_pass','CR_pass']]
+                The order matters if the sub-list contains multiple strings - the regions are plotted in order
+                with the first on top and last on bottom of the canvas.
+
+        Returns:
+            None
         '''
         run_dir = self.tag+'/'+subtag
         with cd(run_dir):
             if ledger == None:
                 ledger = LoadLedger('')
-            plot.nuis_pulls()
+            plot.nuis_pulls(vtol=vtol, stol=stol, vtol2=vtol2, stol2=stol2, regex=regex)
             plot.save_post_fit_parametric_vals()
             plot.plot_correlation_matrix( # Ignore nuisance parameters that are bins
                 varsToIgnore=self.ledger.alphaParams.name[self.ledger.alphaParams.name.str.contains('_bin_\d+-\d+')].to_list(),
-                threshold=0, # change this to reduce the size of the correlation matrix to only those variables with correlations above a threshold
-        corrText=False # change this if you want the correlation matrix to write the number values to each grid square (often there are too many parameters and looks ugly/useless)
+                threshold=corrthresh,
+                corrText=False
             )
             plot.gen_post_fit_shapes()
-            plot.gen_projections(ledger, self, 'b', prefit)
-            plot.gen_projections(ledger, self, 's', prefit)
+            plot.gen_projections(ledger=ledger, twoD=self, fittag='b', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup)
+            if plotSplusB:
+                plot.gen_projections(ledger=ledger, twoD=self, fittag='s', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup)
             
     def GetParamsOnMatch(self, regex='', subtag='', b_or_s='b'):
         out = {}
@@ -441,9 +478,11 @@ class TwoDAlphabet:
         # param_str = '' if setParams == {} else '--setParameters '+','.join(['%s=%s'%(p,v) for p,v in setParams.items()])
 
         run_dir = self.tag+'/'+subtag
+        print(f'Entering run directory: {run_dir}')
         _runDirSetup(run_dir)
         
         with cd(run_dir):
+            print(os.getcwd())
             gof_data_cmd = [
                 'combine -M GoodnessOfFit',
                 '-d '+card_or_w,
@@ -480,19 +519,20 @@ class TwoDAlphabet:
                     ) for _ in range(njobs)
                 ]
 
-        if not makeEnv:
-            print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True')
 
-            condor = CondorRunner(
-                name = self.tag+'_'+subtag+'_gof_toys',
-                primaryCmds=gof_toy_cmds,
-                toPkg=self.tag+'/',
-                runIn=run_dir,
-                toGrab=run_dir+'/higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root',
-                eosRootfileTarball=eosRootfiles,
-                remakeEnv=makeEnv
-            )
-            condor.submit()
+                if not makeEnv:
+                    print('\nWARNING: running toys on condor but not making CMSSW env tarball. If you want/need to make a tarball of your current CMSSW environment, run GoodnessOfFit() with makeEnv=True\n')
+
+                condor = CondorRunner(
+                    name = self.tag+'_'+subtag+'_gof_toys',
+                    primaryCmds=gof_toy_cmds,
+                    toPkg=self.tag+'/',
+                    runIn=run_dir,
+                    toGrab=run_dir+'/higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root',
+                    eosRootfileTarball=eosRootfiles,
+                    remakeEnv=makeEnv
+                )
+                condor.submit()
             
     def SignalInjection(self, subtag, injectAmount, ntoys, blindData=True, card_or_w='card.txt', rMin=-5, rMax=5, 
                               seed=123456, verbosity=0, setParams={}, defMinStrat=0, extra='', condor=False, eosRootfiles=None, njobs=0, makeEnv=False):
