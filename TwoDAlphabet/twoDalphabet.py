@@ -987,6 +987,8 @@ def make_postfit_workspace(d=''):
     w = w_f.Get('w')
     fr_f = ROOT.TFile.Open(d+'fitDiagnosticsTest.root')
     fr = fr_f.Get('fit_b')
+    if (fr == None):
+        raise ValueError(f'Fit result "fit_b" does not exist in fit result file {fr_f}')
     myargs = ROOT.RooArgSet(fr.floatParsFinal())
     w.saveSnapshot('initialFit',myargs,True)
     fout = ROOT.TFile('initialFitWorkspace.root', "recreate")
