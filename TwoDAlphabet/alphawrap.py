@@ -354,6 +354,44 @@ class ParametricFunction(Generic2D):
                 break
         if parfound == False:
             raise RuntimeError('Could not find par%s in set of nuisances:\n\t%s'%(parIdx,[n['name'] for n in self.nuisances]))
+
+class SemiParametricFunction(ParametricFunction,Generic2D):
+    def __init__(self,name,inhist,binning,formula,constraints={},forcePositive=True,funcCeiling=10.):
+        '''A hybrid of ParametricFunction and BinnedDistribution classes. 
+        Uses former (RooFormulaVar) if bin count<funcCeiling, later (RooRealVar) if not.
+        Args: 
+            same as in Parametric Function and BinnedDistribution classes, except funcCeiling
+            funcCeiling (float, optional). Bins with content >funcCeiling will use floating bin parametrization
+        instead of a functional form. Enables using functional form only in the tails of the distribution. Defaults to 10
+        '''
+        Generic2D.__init__(self,name,binning,forcePositive)
+        self.formula = formula #This is already done in init
+        self.nuisances = self._createFuncVars(constraints)
+        self.arglist = RooArgList()
+        for n in self.nuisances: self.arglist.add(n['obj'])
+
+        for cat in _subspace:
+            cat_name = name+'_'+cat
+            cat_hist = copy_hist_with_new_bins(cat_name,'X',inhist,self.binning.xbinByCat[cat])
+            for ybin in range(1,cat_hist.GetNbinsY()+1):
+                for xbin in range(1,cat_hist.GetNbinsX()+1):
+                    content = cat_hist.GetBinContent(xbin,ybin)
+                    bin_name = '%s_bin_%s-%s'%(cat_name,xbin,ybin)
+                    if(content<funcCeiling):
+                        xConst,yConst = self.mappedBinCenter(xbin,ybin,cat)
+                        if forcePositive: 
+                            final_formula = "max(1e-9,%s)"%(self._replaceXY(xConst,yConst))
+                        else:             
+                            final_formula = self._replaceXY(xConst,yConst)
+
+                        self.binVars[bin_name] = RooFormulaVar(
+                            bin_name, bin_name,
+                            final_formula,
+                            self.arglist
+                        )
+                    else:
+                        self.binVars[bin_name] = RooRealVar(bin_name, bin_name, content, 1e-6, 1e9)
+                        self.nuisances.append({'name':bin_name, 'constraint':'flatParam', 'obj': self.binVars[bin_name]})
        
 class BinnedDistribution(Generic2D):
     def __init__(self,name,inhist,binning,constant=False,forcePositive=True):
