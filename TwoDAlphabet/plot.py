@@ -263,14 +263,30 @@ class Plotter(object):
 
             make_can('{d}/{p}_{r}_2D'.format(d=self.dir,p=process,r=region), [out_file_name%('prefit')+'.png', out_file_name%('postfit')+'.png'])
 
-    def plot_projections(self, prefit=False, lumiText=r'$138 fb^{-1}$ (13 TeV)', extraText='Preliminary', units='GeV'):
+    def plot_projections(self, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[]):
         '''Plot comparisons of data and the post-fit background model and signal
         using the 1D projections. Canvases are grouped based on projection axis.
         The canvas rows are separate selection regions while the columns
         are the different slices of the un-plotted axis.
 
         Args:
-        prefit (bool): If True, will plot the prefit distributions instead of postfit. Defaults to False.
+            lumiText (string): LaTeX-formatted string containing luminosity information. Defaults to Run2 conditions.
+            extraText (str): Additional text to place after experiment (CMS) text.
+            subtitles ({str:str}, optional): Dict of raw strings corresponding to each region specified in the JSON to be placed underneath axis slice text in top left corner of pad. If multiple titles are desired, separate with semicolon character.
+                Example: {"SR_fail": r"$ParticleNet_{TvsQCD}$ Pass\n$ParticleNetMD_{Xbb}$ Fail", "SR_pass": r"$ParticleNet_{TvsQCD}$ Pass;$ParticleNetMD_{Xbb}$ Pass"}
+            units (str): Units of measurement for observable. Placed on x-axis and in slice string.
+
+            regionsToGroup ([[str]]): 
+                List of list of strings representing the desired regions to group. For example if the fit involved
+                four regions: CR_fail, CR_pass, SR_fail, SR_pass then 2DAlphabet will try to plot all
+                (4 regions) x (3 slices) = 12 plots on the same page, which is greater than the number that can be
+                plotted. Instead, pass regionsToGroup = [['CR'],['SR']] to have the CR and SR plotted on separate
+                2x3 canvases. 
+                If you wanted to plot, e.g. SR_fail, SR_pass, and CR_pass, pass in the following list of lists:
+                    [['CR'], ['SR'], ['SR_fail','SR_pass','CR_pass']]
+                The order matters if the sub-list contains multiple strings - the regions are plotted in order
+                with the first on top and last on bottom of the canvas.
+
         Returns:
             None
         '''
@@ -286,7 +302,7 @@ class Plotter(object):
                                             alphaBottom=(not logyFlag))
                 signals = group[group.process_type.eq('SIGNAL')]
 
-                for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
+                for proj in ['postfit_projx','postfit_projy']:
                     for islice in range(3):
                         projn     = f'{proj}{islice}'
                         sig_projn = projn
@@ -309,6 +325,12 @@ class Plotter(object):
 
                         out_pad_name = f'{self.dir}/base_figs/{projn}_{region}{"" if not logyFlag else "_logy"}'
 
+                        # If user requested sub-titles, obtain the ones for this specific region
+                        if subtitles:
+                            subtitle = subtitles[region]
+                        else:
+                            subtitle = {}
+
                         # Produce a matplotlib axis containing the full data + stacked bkg histogram for this projection and slice
                         make_ax_1D(
                             out_pad_name, 
@@ -318,12 +340,12 @@ class Plotter(object):
                             signals=these_signals, 
                             totalBkg=this_totalbkg, 
                             logyFlag=logyFlag, 
-                            prefit=prefit,          # whether to draw prefit or postfit
-                            subtitle=slice_str,     # opposite axis slices (top left)
-                            lumiText=lumiText,      # (top right)
+                            slicetitle=slice_str,   # opposite axis slices (top left, in pad)
+                            subtitle=subtitle,       # (top left, under slice string)
+                            lumiText=lumiText,      # (top right, above pad)
                             extraText=extraText,    # top left, above pad, next to "CMS"
                             units=units,
-                            savePDF=False,
+                            savePDF=True,
                             savePNG=True
                         )
 
@@ -332,120 +354,50 @@ class Plotter(object):
 
         # Create a canvas with the full set of projection plots
         for logy in ['', '_logy']:
-            for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
+            for proj in ['postfit_projx','postfit_projy']:
                 these_axes = axes.loc[axes.proj.str.contains(proj)]
                 if logy == '':
                     these_axes = these_axes.loc[these_axes.logy.eq(False)]
                 else:
                     these_axes = these_axes.loc[these_axes.logy.eq(True)]
 
-                these_axes = these_axes.sort_values(by=['region','proj'])['ax'].to_list()
-                out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
-                make_can(out_can_name, these_axes)
-
-
-    def plot_projections_OLD(self, prefit=False):
-        '''Plot comparisons of data and the post-fit background model and signal
-        using the 1D projections. Canvases are grouped based on projection axis.
-        The canvas rows are separate selection regions while the columns 
-        are the different slices of the un-plotted axis.
-
-        Args:
-        prefit (bool): If True, will plot the prefit distributions instead of postfit. Defaults to False.
-        Returns:
-            None
-        '''
-        pads = pandas.DataFrame()
-        for region, group in self.df.groupby('region'):
-            binning,_ = self.twoD.GetBinningFor(region)
-
-            for logyFlag in [False, True]:
-                ordered_bkgs = self._order_df_on_proc_list(
-                                            group[group.process_type.eq('BKG')], proc_type='BKG',
-                                            alphaBottom=(not logyFlag))
-                signals = group[group.process_type.eq('SIGNAL')]
-
-                for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
-                    for islice in range(3):
-                        projn = proj+str(islice)
-                        sig_projn = projn
-                        if self.twoD.options.plotPrefitSigInFitB and self.fittag == 'b':
-                            sig_projn = projn.replace('postfit','prefit')
-
-                        this_data =      self.Get(row=group.loc[group.process_type.eq('DATA')].iloc[0], hist_type=projn)
-                        this_totalbkg =  self.Get(row=group.loc[group.process_type.eq('TOTAL')].iloc[0], hist_type=projn)
-                        these_bkgs =    [self.Get(row=ordered_bkgs.iloc[irow], hist_type=projn) for irow in range(ordered_bkgs.shape[0])]
-                        these_signals = [self.Get(row=signals.iloc[irow], hist_type=sig_projn) for irow in range(signals.shape[0])]
-
-                        slice_edges = (
-                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice],
-                            binning.xtitle if 'y' in proj else binning.ytitle,
-                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice+1],
-                            'GeV'
-                        )
-                        slice_str = '%s < %s < %s %s'%slice_edges
-
-                        out_pad_name = '{d}/base_figs/{projn}_{reg}{logy}'.format(
-                                            d=self.dir, projn=projn, reg=region,
-                                            logy='' if logyFlag == False else '_logy')
-                        
-                        make_pad_1D(out_pad_name, data=this_data, bkgs=these_bkgs, signals=these_signals,
-                                    subtitle=slice_str, totalBkg=this_totalbkg,
-                                    logyFlag=logyFlag, year=self.twoD.options.year, preVsPost=False,
-                                    extraText='', savePDF=True, savePNG=True, ROOTout=False)
-                        pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}])], ignore_index=True)
-
-        for logy in ['','_logy']:
-            for proj in ['prefit_projx','prefit_projy'] if prefit else ['postfit_projx','postfit_projy']:
-                these_pads = pads.loc[pads.proj.str.contains(proj)]
-                if logy == '':
-                    these_pads = these_pads.loc[these_pads.logy.eq(False)]
+                if (len(these_axes) > 9) and (len(regionsToGroup) == 0):
+                    raise RuntimeError('histlist of size %s not currently supported. Instead, call plot_projections() with regionsToGroup list describing the regions you want to group together.'%len(these_axes))
+                elif (len(these_axes) > 9) and (len(regionsToGroup) > 0):
+                    validRegions = these_axes['region'].to_list()
+                    for i in range(len(regionsToGroup)):
+                        region = regionsToGroup[i]
+                        if (len(region) > 1):	# e.g. ['SR_fail', 'SR_pass', 'ttbarCR_pass']
+                            # Ensure that the regions are plotted in order
+                            new_axes = []
+                            for r in region:
+                                if r not in validRegions:
+                                    raise ValueError(f'Region "{r}" specified in regionsToGroup is not available in the 2DAlphabet workspace. Available regions:\n\t{validRegions}')
+                                r_axes = these_axes[these_axes['region'].str.match(r)].sort_values(by=['region','proj'])['ax'].to_list()
+                                new_axes += r_axes
+                            '''
+                            new_axes = []
+                            # Ensure that the regions are plotted in order provided
+                            for r in region:
+                                for ax in these_axes:
+                                    # As an edge case, assume r would be: CR_pass
+                                    # pad would be: plots_fit_b/base_figs/postfit_projx2_CR_pass.png
+                                    # but also: plots_fit_b/base_figs/postfit_projx2_ttbarCR_pass.png
+                                    # so we have to append an underscore to ensure we get the right one 
+                                    rNew = '_'+r
+                                    if rNew in ax:
+                                        new_axes.append(ax)
+                            '''
+                            out_can_name = '{d}/{reg}_{proj}{logy}'.format(d=self.dir,proj=proj,logy=logy,reg='_and_'.join(region))
+                            make_can(out_can_name, new_axes)
+                        else:	# e.g. ['SR']
+                            new_axes = these_axes[these_axes['region'].str.match(f'{region[0]}_')].sort_values(by=['region','proj'])['ax'].to_list()
+                            out_can_name = '{d}/{reg}_{proj}{logy}'.format(d=self.dir,proj=proj,logy=logy,reg=region[0])
+                            make_can(out_can_name, new_axes)
                 else:
-                    these_pads = these_pads.loc[these_pads.logy.eq(True)]
-
-                these_pads = these_pads.sort_values(by=['region','proj'])['pad'].to_list()
-                out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
-                make_can(out_can_name, these_pads)
-        
-    def plot_pre_vs_post(self):
-        '''Make comparisons for each background process of pre and post fit projections.
-        '''
-        for proj in ['projx','projy']:
-            pads = pandas.DataFrame()
-            for pr, _ in self.df[~self.df.process.isin(['data_obs','TotalBkg'])].groupby(['process','region']):
-                process, region = pr[0], pr[1]
-                binning,_ = self.twoD.GetBinningFor(region)
-                for islice in range(3):
-                    projn = proj+str(islice)
-                    post = self.Get('%s_%s_postfit_%s'%(process,region,projn))
-                    post.SetLineColor(ROOT.kBlack)
-                    post.SetTitle('          Postfit,'+process) # spaces are for legend aesthetics
-
-                    pre = self.Get('%s_%s_prefit_%s'%(process,region,projn))
-                    pre.SetLineColor(ROOT.kRed)
-                    pre.SetTitle('Prefit, '+process)
-
-                    slice_edges = (
-                        self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice],
-                        binning.xtitle if 'y' in proj else binning.ytitle,
-                        self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice+1],
-                        'GeV'
-                    )
-                    slice_str = '%s < %s < %s %s'%slice_edges
-
-                    out_pad_name = '{d}/base_figs/{p}_{reg}_{projn}'.format(d=self.dir,p=process,projn=projn, reg=region)
-                    make_pad_1D(
-                        out_pad_name, 
-                        post, [pre], totalBkg=pre, subtitle=slice_str, savePDF=True, savePNG=True, 
-                        datastyle='histe', year=self.twoD.options.year, extraText='',
-            preVsPost=True  # This tells make_pad_1D() that we're not passing in data distributions but rather a non-data postfit dist and to relabel the legend
-                    )
-                    
-                    pads = pandas.concat([pads,pandas.DataFrame([{'pad':out_pad_name+'.png','process':process,'region':region,'proj':projn}])], ignore_index=True)
-
-        for process, padgroup in pads.groupby('process'):
-            these_pads = padgroup.sort_values(by=['region','proj'])['pad'].to_list()
-        make_can('{d}/{p}_{proj}'.format(d=self.dir, p=process,proj=proj), these_pads)
+                    these_axes = these_axes.sort_values(by=['region','proj'])['ax'].to_list()
+                    out_can_name = '{d}/{proj}{logy}'.format(d=self.dir, proj=proj, logy=logy)
+                    make_can(out_can_name, these_axes)
 
 
     def plot_transfer_funcs(self):
@@ -514,10 +466,10 @@ def make_pad_2D(outname, hist, style='lego', logzFlag=False, ROOTout=None,
     return pad
 
 
-def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='',
+def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='', slicetitle='',
             totalBkg=None, logyFlag=False, ROOTout=None, savePDF=False, savePNG=False,
-            dataOff=False, prefit=False, datastyle='pe X0', year=1, addSignals=True, 
-            lumiText=r'$138 fb^{-1} (13 TeV)$', extraText='Preliminary', units='GeV'):
+            dataOff=False, datastyle='pe X0', year=1, addSignals=True, 
+            lumiText=r'$138 fb^{-1} (13 TeV)$', extraText='Preliminary', units='GeV', hspace=0.0):
     '''Create a matplotlib.axis.Axis object holding a 1D plot with standardized CMS formatting conventions
     Args:
         outname (str): Output file path + name.
@@ -532,11 +484,9 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
         savePDF (bool, optional): Save to PDF. Defaults to True.
         savePNG (bool, optional): Save to PNG. Defaults to True.
         dataOff (bool, optional): Turn off the data from plotting. Defaults to False.
-        preVsPost (bool, optional): Incoming data histogram is postfit distribution of non-data process. If True, renames legend entry. See plot_pre_vs_post().
-        addSignals (bool, optional): If True, multiple signals will be added together and plotted as one. If False, signals are plotted individually. Defaults to True.
         extraText (str, optional): Prepended to the CMS subtext. Defaults to 'Preliminary'.
         units (str, optional): Units of measurement for x- and y-axes. Defaults to 'GeV'.
-
+        hspace (float, optional): Spacing between the main plotting axis and the ratio subplot axis. Defaults to 0.0 (no spacing). Original 2DAlphabet spacing would correspond to hspace=0.7.
     Returns:
         ax (matplotlib.axis.Axis): Output axis object for further manipulation.
     '''
@@ -548,6 +498,7 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
         edges = np.array(xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH'])
     else:
         edges = np.array(binning.ybinList)
+    widths = np.diff(edges)     # obtain bin widths
 
     # Convert all unique bkg and signal hists to arrays and group by process. They will come already ordered, so keep the ordering
     bkgDict = OrderedDict()
@@ -576,96 +527,70 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     if totalBkg:
         totalBkg_arr, totalBkg_err = hist2array(totalBkg, return_errors=True)
 
-    '''
-    # Now convert hist -> array 
-    data_arr = hist2array(data); data_arr = np.array([int(i) for i in data_arr]) # hist2array converts to floats which may leave very small differences when converting TH1 (int) -> array (float). This fixes it 
-    bkg_err_arrs = [hist2array(bkg,return_errors=True) for bkg in bkgs]
-    bkg_arrs = [bkg_err_arrs[i][0] for i in range(len(bkg_err_arrs))]   # Background histogram arrays
-    bkg_errs = [bkg_err_arrs[i][1] for i in range(len(bkg_err_arrs))]   # Background error arrays
-    sig_arrs = [hist2array(sig) for sig in signals]
-    if totalBkg:
-        totalBkg_arr, totalBkg_err = hist2array(totalBkg, return_errors=True)
-    '''
-
     # Begin plotting
     plt.style.use([hep.style.CMS])
     fig, (ax, rax) = plt.subplots(2, 1, sharex=True, **ratio_fig_style) # ax is the stacked plot, rax contains the ratio plot
-    #fig.subplots_adjust(hspace=0.07)
-    fig.subplots_adjust(hspace=0.0)
+    fig.subplots_adjust(hspace=hspace)
 
     bkg_stack = np.vstack([arr for key, arr in bkgDict.items() if '_arr' in key]) # stack all unique background processes
     # depending on step option ('pre' or 'post'), the last bin needs be concatenated on one side, so that the edge bin is drawn (annoying)
     bkg_stack = np.hstack([bkg_stack, bkg_stack[:,-1:]])
     bkg_stack = np.hstack([bkg_stack])
 
-    '''
-    print(bkgDict['Multijet_arr'])
-    print(bkg_stack)
-    for i in range(1,bkgs[0].GetNbinsX()+1):
-        print(bkgs[0].GetBinContent(i))
-    exit()
-    '''
-
-    '''
-    print(outname)
-    print(edges)
-    print(edges[1:])
-    print(edges[:-1])
-    print(bkg_stack[0])
-    print(totalBkg_err)
-    '''
-
     ax.stackplot(edges, bkg_stack, labels=bkgNamesLatex, colors=bkgColors, step='post', **stack_style)
     unc = totalBkg_err # the hist2array() call returns the sqrt of the sumw2 for the histogram
     unc = np.hstack([unc, unc[-1]]) # concatenation of last bin so that edge bin is drawn
-    #unc = np.hstack([unc])
-    ax.fill_between(x=edges, y1=bkg_stack.sum(axis=0)-unc, y2=bkg_stack.sum(axis=0)+unc, label='Stat. Unc.', step='post', **hatch_style)
+    ax.fill_between(x=edges, y1=bkg_stack.sum(axis=0)-unc, y2=bkg_stack.sum(axis=0)+unc, label='Bkg. Unc.', step='post', **hatch_style)
     bin_centers = (edges[:-1] + edges[1:])/2
     # Determine if we have variable binning, and if so, add the CMS-required horizontal bars to denote bin width
-    if len(np.unique(np.diff(edges))) > 1: # Detected variable bin widths
+    if len(np.unique(widths)) > 1: # Detected variable bin widths
         xerrs = (edges[1:]-edges[:-1])/2
+        ax.set_ylabel('Events / bin')
     else:
+        ax.set_ylabel(f'Events / {widths[0]} {units}')
         xerrs = None
     ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
 
     # Plot signals
     for i, sig in enumerate(sigNames):
         sigarr = sigDict[f'{sig}_arr']
-        print(sigarr)
-        print(sigNamesLatex[i])
-        print(sigColors[i])
         ax.step(x=edges, y=np.hstack([sigarr, sigarr[-1]]), where='post', color=sigColors[i], label=sigNamesLatex[i])
 
+    if logyFlag:
+        ax.set_ylim(0.01, totalBkg_arr.max()*1e5)
+        ax.set_yscale('log')
+    else:
+        ax.set_ylim(0, totalBkg_arr.max()*1.38)
 
-    ax.set_ylim(0, totalBkg_arr.max()*1.3) # allow some space above the maximum value to add the slice text
-    ax.set_ylabel('Events / bin')
-    ax.legend()
+    # Make sure data and signal(s) come first 
+    handles, labels = ax.get_legend_handles_labels()
+    data_idx = labels.index('Data') # should always be last entry in legend
+    unc_idx  = labels.index('Bkg. Unc.')
+    sig_idxs = [i for i in range(unc_idx+1, data_idx)] # indices of all signals in legend
+    # Resulting legend ordering will be Data, signal(s), bkgs, then bkg unc. The bkg ordering is already sent to this function properly.
+    leg_order = [data_idx] + sig_idxs + [idx for idx in range(len(labels)) if idx not in [data_idx] + sig_idxs]
+    ax.legend([handles[idx] for idx in leg_order],[labels[idx] for idx in leg_order])
     ax.autoscale(axis='x', tight=True)
     ax.margins(x=0) # remove white space at left and right margins of plot 
 
-    if logyFlag: ax.set_yscale("log")
-
     hep.cms.label(loc=0, ax=ax, data = not dataOff, label=extraText, rlabel='') # CMS + label, where label is typically “Preliminary” “Supplementary”, “Private Work” or “Work in Progress”
     hep.cms.lumitext(lumiText, ax=ax)                       # Typically luminosity + sqrt(s)
-    # Can't use the hep.cms.text() wrapper without "CMS" being added, so add the subtitle (slice) text manually
-    subtitle = r'${}$ {}'.format(subtitle.replace('#','\\'), units)
-    ax.text(0.05, 0.95, subtitle, ha='left', va='top', fontsize='small', transform=ax.transAxes)
+    # Can't use the hep.cms.text() wrapper without "CMS" being added, so add the slice text manually
+    if slicetitle:
+        slicetitle = r'${}$ {}'.format(slicetitle.replace('#','\\'), units)
+        ax.text(0.3, 0.95, slicetitle, ha='center', va='top', fontsize='small', transform=ax.transAxes)
+    if subtitle:
+        # Check if user requested multi-line
+        if (len(subtitle.split(';')) == 1):
+            ax.text(0.3, 0.89, r'%s'%subtitle, ha='center', va='top', fontsize='small', transform=ax.transAxes)
+        else:
+            for i, title in enumerate(subtitle.split(';')):
+                ax.text(0.3, 0.95-(0.06*(i+1)), r'%s'%title, ha='center', va='top', fontsize='small', transform=ax.transAxes)
 
- 
-    # ratio
-    #rax.fill_between(x=edges, y1=1-unc, y2=1+unc, step='post', **shaded_style)
-    #rax.errorbar(x=bin_centers, y=data_arr/totalBkg_arr, yerr=np.sqrt(data_arr)/totalBkg_err, **errorbar_style)
-    #rax.set_ylim(0, 2)
-    #rax.set_ylabel('Obs. / Pred.')
-    #rax.set_xlabel('mass [GeV]')
-    #rax.autoscale(axis='x', tight=True)
-
-    # ratio
+    # pull
     dataMinusBkg = data_arr - totalBkg_arr
     sigmas = np.sqrt(np.sqrt(data_arr)*np.sqrt(data_arr) + totalBkg_err*totalBkg_err)
     sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
-    #widths = [edges[i]-edges[i-1] for i in range(1, len(edges))]
-    widths = np.diff(edges)
     rax.bar(bin_centers, dataMinusBkg/sigmas, width=widths, color='gray')
     rax.set_ylim(-3,3)
     rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
@@ -685,197 +610,6 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     print(f'Plotting {outname}')
     plt.close()
     # return ax, rax      ????????????
-
-def make_pad_1D_OLD(outname, data, bkgs=[], signals=[], title='', subtitle='',
-            totalBkg=None, logyFlag=False, ROOTout=None, savePDF=False, savePNG=False,
-            dataOff=False, preVsPost=False, datastyle='pe X0', year=1, addSignals=True, extraText='Preliminary'):
-    '''Make a pad holding a 1D plot with standardized formatting conventions.
-
-    Args:
-        outname (str): Output file path name.
-        data (TH1): Data histogram.
-        bkgs ([TH1]): List of background histograms (will be stacked).
-        signals ([TH1]): List of signal histograms.
-        title (str, optional): Title of plot. Only applicable if bkgs is empty. Defaults to ''.
-        subtitle (str, optional): Subtitle text for physics information (like slice ranges). Defaults to ''.
-        totalBkg (TH1, optional): Total background estimate from fit. Used to get total background uncertianty. Defaults to None.
-        logyFlag (bool, optional): Make log y-axis. Defaults to False.
-        saveROOT (bool, optional): Save to master ROOT file. Defaults to False.
-        savePDF (bool, optional): Save to PDF. Defaults to True.
-        savePNG (bool, optional): Save to PNG. Defaults to True.
-        dataOff (bool, optional): Turn off the data from plotting. Defaults to False.
-    preVsPost (bool, optional): Incoming data histogram is postfit distribution of non-data process. If True, renames legend entry. See plot_pre_vs_post().
-        datastyle (str, optional): ROOT drawing style for the data. Defaults to 'pe X0'.
-        year (int, optional): Luminosity formatting. Options are 16, 17, 18, 1 (full Run 2), 2 (16+17+18). Defaults to 1.
-        addSignals (bool, optional): If True, multiple signals will be added together and plotted as one. If False, signals are plotted individually. Defaults to True.
-        extraText (str, optional): Prepended to the CMS subtext. Defaults to 'Preliminary'.
-
-    Returns:
-        ROOT.TPad: Output pad.
-    '''
-
-    def _draw_extralumi_tex():
-        lumiE = ROOT.TLatex()
-        lumiE.SetNDC()
-        lumiE.SetTextAngle(0)
-        lumiE.SetTextColor(ROOT.kBlack)
-        lumiE.SetTextFont(42)
-        lumiE.SetTextAlign(31) 
-        lumiE.SetTextSize(0.7*0.1)
-        lumiE.DrawLatex(1-0.05,1-0.1+0.2*0.1,"137 fb^{-1} (13 TeV)")
-
-    pad = _make_pad_gen(outname)
-
-    data.SetBinErrorOption(ROOT.TH1.kPoisson)
-    data.SetLineColorAlpha(ROOT.kBlack, 0 if dataOff else 1)
-    if 'pe' in datastyle.lower():
-        data.SetMarkerColorAlpha(ROOT.kBlack,0 if dataOff else 1)
-        data.SetMarkerStyle(8)
-    if 'hist' in datastyle.lower():
-        data.SetFillColorAlpha(0,0)
-
-    data.SetTitleOffset(1.15,"xy")
-    data.GetYaxis().SetTitleOffset(1.04)
-    data.GetYaxis().SetLabelSize(0.07)
-    data.GetYaxis().SetTitleSize(0.09)
-    data.GetXaxis().SetLabelSize(0.07)
-    data.GetXaxis().SetTitleSize(0.09)
-    data.GetXaxis().SetLabelOffset(0.05)
-    data.GetYaxis().SetNdivisions(508)
-    data.SetMaximum(1.35*data.GetMaximum())
-
-    if len(bkgs) == 0:
-        data.SetTitle(title)
-        data.SetTitleOffset(1.1)
-        data.Draw(datastyle)
-        CMS_lumi.CMS_lumi(pad, year, 11)
-    else:
-        data.SetTitle('')
-        if not dataOff:
-            main_pad = ROOT.TPad(data.GetName()+'_main',data.GetName()+'_main',0, 0.35, 1, 1)
-            sub_pad  = ROOT.TPad(data.GetName()+'_sub',data.GetName()+'_sub',0, 0, 1, 0.35)
-        else:
-            main_pad = ROOT.TPad(data.GetName()+'_main',data.GetName()+'_main',0, 0.1, 1, 1)
-            sub_pad  = ROOT.TPad(data.GetName()+'_sub',data.GetName()+'_sub',0, 0, 0, 0)
-
-        main_pad.SetBottomMargin(0.04)
-        main_pad.SetLeftMargin(0.17)
-        main_pad.SetRightMargin(0.05)
-        main_pad.SetTopMargin(0.1)
-
-        sub_pad.SetLeftMargin(0.17)
-        sub_pad.SetRightMargin(0.05)
-        sub_pad.SetTopMargin(0)
-        sub_pad.SetBottomMargin(0.35)           
-        
-        pad.cd()
-        main_pad.Draw()
-        sub_pad.Draw()
-
-        if len(signals) == 0: nsignals = 0
-        elif addSignals:      nsignals = 1
-        else:                 nsignals = len(signals)
-
-        legend_bottomY = 0.73-0.03*(min(len(bkgs),6)+nsignals+1)
-        legend = ROOT.TLegend(0.65,legend_bottomY,0.90,0.88)
-        legend.SetBorderSize(0)
-        if not dataOff:
-            if preVsPost:
-                legend.AddEntry(data,'Postfit',datastyle)
-            else:
-                legend.AddEntry(data,'Data',datastyle)
-
-        totalBkg.SetMarkerStyle(0)
-        totalBkg_err = totalBkg.Clone()
-        totalBkg.SetLineColor(ROOT.kBlack)
-        totalBkg_err.SetLineColor(ROOT.kBlack)
-        totalBkg_err.SetLineWidth(0)
-        totalBkg_err.SetFillColor(ROOT.kBlack)
-        totalBkg_err.SetFillStyle(3354)
-    if preVsPost:
-        # Determine whether we're plotting uncertainty on Prefit or Postfit distribution (plot_pre_vs_post() uses prefit unc)
-        isPrefit = 1 if 'Prefit' in totalBkg.GetTitle() else 0
-        legend.AddEntry(totalBkg_err,'Total {} unc.'.format('prefit' if isPrefit else 'postfit'), 'F')
-    else:
-        legend.AddEntry(totalBkg_err,'Total bkg unc.','F')
-
-        sigs_to_plot = signals
-        # Can add together for total signal
-        if addSignals and len(signals) > 0:
-            totsig = signals[0].Clone()
-            for isig in range(1,len(signals)):
-                totsig.Add(signals[isig])
-            sigs_to_plot = [totsig]
-        # Plot either way
-        for isig,sig in enumerate(sigs_to_plot):
-            sig.SetLineWidth(2)
-            legend.AddEntry(sig,sig.GetTitle().split(',')[0],'L')
-
-        stack = ROOT.THStack(outname.split('/')[-1]+'_stack',outname.split('/')[-1]+'_stack')
-        # Build the stack
-        legend_info = []
-        for bkg in bkgs:     # Won't loop if bkglist is empty
-            if logyFlag:
-                bkg.SetMinimum(1e-3)
-            stack.Add(bkg)
-            legend_info.append((bkg.GetTitle().split(',')[0], bkg))
-
-        # Deal with legend which needs ordering reversed from stack build
-        legend_duplicates = []
-        for bname, background in reversed(legend_info):
-            if bname not in legend_duplicates:
-                legend.AddEntry(background, bname, 'f')
-                legend_duplicates.append(bname)
-        # set_hist_maximums([stack, totalBkg, data], 2.5-legend_topY+0.03)
-        # Go to main pad and draw
-        main_pad.cd()
-        if logyFlag:
-            main_pad.SetLogy()
-            data.SetMaximum(50*data.GetMaximum())
-            data.SetMinimum(1e-3)
-            totalBkg.SetMinimum(1e-3)
-            totalBkg_err.SetMinimum(1e-3)
-            stack.SetMinimum(1e-3)
-            for sig in signals: sig.SetMinimum(1e-3)
-            
-            # main_pad.RedrawAxis()
-        data.Draw(datastyle)
-        stack.Draw('hist same') # need to draw twice because the axis doesn't exist for modification until drawing
-        try:    stack.GetYaxis().SetNdivisions(508)
-        except: stack.GetYaxis().SetNdivisions(8,5,0)
-        stack.Draw('hist same')
-        for sig in signals:
-            sig.Draw('hist same')
-        
-        # Draw total hist and error
-        totalBkg.Draw('hist same')
-        totalBkg_err.Draw('e2 same')
-        data.Draw(datastyle+' same')
-        legend.Draw()
-        
-        CMS_lumi.extraText = extraText
-        CMS_lumi.cmsTextSize = 0.9
-        CMS_lumi.cmsTextOffset = 2
-        CMS_lumi.lumiTextSize = 0.9
-        CMS_lumi.CMS_lumi(main_pad, year, 11)
-        
-        subtitle_tex = ROOT.TLatex()
-        subtitle_tex.SetNDC()
-        subtitle_tex.SetTextAngle(0)
-        subtitle_tex.SetTextColor(ROOT.kBlack)
-        subtitle_tex.SetTextFont(42)
-        subtitle_tex.SetTextAlign(12) 
-        subtitle_tex.SetTextSize(0.06)
-        subtitle_tex.DrawLatex(0.208,0.74,subtitle)
-
-        sub_pad.cd()
-        pull = _make_pull_plot(data, totalBkg, preVsPost) # If plotting pre vs postfit dists, ensure the Y axis of pull plot reflects this
-        pull.Draw('hist')
-        pad.cd()
-    
-    ROOT.SetOwnership(pad, False)
-    _save_pad_generic(outname, pad, ROOTout, savePDF, savePNG)
-    return pad
 
 def make_can(outname, padnames, padx=0, pady=0):
     '''Combine multiple pads/canvases into one canvas for convenience of viewing.
@@ -908,7 +642,8 @@ def make_can(outname, padnames, padx=0, pady=0):
         elif len(padnames) <= 9:
             padx = 3; pady = 3
         else:
-            raise RuntimeError('histlist of size %s not currently supported: %s'%(len(padnames),[p.GetName() for p in padnames]))
+            raise RuntimeError('histlist of size %s not currently supported'%len(padnames))
+            #raise RuntimeError('histlist of size %s not currently supported: %s'%(len(padnames),[p.GetName() for p in padnames]))
 
     pads = [Image.open(os.path.abspath(pname)) for pname in padnames]
     w, h = pads[0].size
@@ -925,17 +660,10 @@ def _get_start_stop(i,slice_idxs):
     stop  = slice_idxs[i+1]
     return start, stop
 
-def gen_projections(ledger, twoD, fittag, loadExisting=False, prefit=False):
-    '''
-    Optional Args:
-    loadExisting (bool): Flag to load existing projections instead of remaking everything. Defaults to False.
-    prefit       (bool): Flag to plot prefit distributions instead of postfit. Defaults to False.
-    '''
+def gen_projections(ledger, twoD, fittag, loadExisting=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[]):
     plotter = Plotter(ledger, twoD, fittag, loadExisting)
     plotter.plot_2D_distributions()
-    plotter.plot_projections(prefit)
-    plotter.plot_pre_vs_post()
-    # plotter.plot_transfer_funcs()
+    plotter.plot_projections(lumiText, extraText, subtitles, units, regionsToGroup)
 
 def make_systematic_plots(twoD):
     '''Make plots of the systematic shape variations of each process based on those
@@ -1043,8 +771,8 @@ def _get_good_fit_results(tfile):
             successful_fits.append(fittag)
     return successful_fits
 
-def nuis_pulls():
-    diffnuis_cmd = 'python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/diffNuisances.py fitDiagnosticsTest.root --abs -g nuisance_pulls.root'
+def nuis_pulls(vtol=0.3, stol=0.1, vtol2=2.0, stol2=0.5, regex='^(?!.*(_bin_|_par))'):
+    diffnuis_cmd = f"python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/diffNuisances.py fitDiagnosticsTest.root --abs -g nuisance_pulls.root --vtol={vtol} --stol={stol} --vtol2={vtol2} --stol2={stol2} --all --regex='{regex}'"
     execute_cmd(diffnuis_cmd)
     # Make a PDF of the nuisance_pulls.root
     if os.path.exists('nuisance_pulls.root'):
