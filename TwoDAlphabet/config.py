@@ -418,7 +418,7 @@ class OrganizedHists():
                 h.SetTitle(row.out_histname)
                 if row.color not in mpl_to_root_colors.keys():
                     available_colors = '", "'.join(mpl_to_root_colors.keys())
-                    raise ValueError(f'Color "{color}" not defined. Please add the ROOT TColor code to the "mpl_to_root_colors" dictionary defined in TwoDAlphabet.plotstyle. Available default colors are: "{available_colors}"')
+                    raise ValueError(f'Color "{row.color}" not defined. Please add the ROOT TColor code to the "mpl_to_root_colors" dictionary defined in TwoDAlphabet.plotstyle. Available default colors are: "{available_colors}"')
                 else:
                     h.SetFillColor(mpl_to_root_colors[row.color])
 
