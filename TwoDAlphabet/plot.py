@@ -43,6 +43,7 @@ class Plotter(object):
         self.dir = 'plots_fit_{f}'.format(f=self.fittag)
         self.slices = {'x': {}, 'y': {}}
         self.root_out = None
+        self.df_path = None
 
         if not loadExisting:
             self._make()
@@ -51,15 +52,20 @@ class Plotter(object):
 
     def __del__(self):
         '''On deletion, save DataFrame to csv and close ROOT file.'''
-        self.df.to_csv('%s/df.csv'%self.dir)
-        self.root_out.Close()
+        if self.df_path is not None:
+            self.df.to_csv(self.df_path)
+        if self.root_out is not None and hasattr(self.root_out, 'Close'):
+            self.root_out.Close()
 
     def _load(self):
         '''Open pickled DataFrame and output ROOT file
         and reference with `self.df` and `self.root_out` attributes.'''
         root_out_name = '%s/all_plots.root'%self.dir
         self.root_out = ROOT.TFile.Open(root_out_name)
-        self.df = pandas.read_csv('%s/df.csv'%self.dir)
+        
+        df_csv_path = os.path.join(self.dir, 'df.csv')
+        self.df = pandas.read_csv(df_csv_path)
+        self.df_path = df_csv_path
 
     def _format_1Dhist(self, hslice, title, xtitle, ytitle, color, proc_type):
         '''Perform some basic formatting of a 1D histogram so that the ROOT.TH1
