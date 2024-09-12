@@ -559,6 +559,7 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     #Data plot with Garwood Poisson CI as error bars
     lower_errors, upper_errors = poisson_conf_interval(data_arr)
     yerr = [data_arr - lower_errors, upper_errors - data_arr]
+    
     ax.errorbar(x=bin_centers, y=data_arr, yerr=yerr, xerr=xerrs, label='Data', **errorbar_style)
     #ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
 
@@ -600,9 +601,12 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
 
     # pull
     dataMinusBkg = data_arr - totalBkg_arr
-    sigmas = np.sqrt(np.sqrt(data_arr)*np.sqrt(data_arr) + totalBkg_err*totalBkg_err)
+    data_error = np.where(dataMinusBkg<0, upper_errors - data_arr, data_arr - lower_errors)
+    sigmas = np.sqrt(data_error**2 + totalBkg_err**2) 
+    #sigmas = np.sqrt(np.sqrt(data_arr)*np.sqrt(data_arr) + totalBkg_err*totalBkg_err)
     sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
-    rax.bar(bin_centers, dataMinusBkg/sigmas, width=widths, color='gray')
+    pulls =  dataMinusBkg/sigmas
+    rax.bar(bin_centers,pulls, width=widths, color='gray')
     rax.set_ylim(-3,3)
     rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
     axisTitle = binning.xtitle if projn == 'x' else binning.ytitle
@@ -1021,32 +1025,30 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
             execute_cmd('rm -r '+tmpdir)
 
 
-def poisson_conf_interval(k, confidence_level=0.68):
-    import scipy.stats as stats
+def poisson_conf_interval(k):
     """
-    Calculate Poisson 68% confidence interval using the Garwood interval.
+    Calculate Poisson (Garwood) confidence intervals using ROOT's TH1 with kPoisson error option.
     
     Parameters:
     k (array): The number of counts (events) per bin.
-    confidence_level (float): Desired confidence level for the interval.
-    
+
     Returns:
-    lower (array): Lower bound of the confidence interval.
-    upper (array): Upper bound of the confidence interval.
+    lower (array): Bin count - lower error.
+    upper (array): Bin count + upper error.
     """
     lower = np.zeros_like(k, dtype=float)
     upper = np.zeros_like(k, dtype=float)
-    
-    alpha = 1. - confidence_level
+    #Temp hist to exploit ROOT's built-in CI calculating function
+    hist = ROOT.TH1F("hist_delete", "", 1, 0, 1)
+    hist.SetBinErrorOption(ROOT.TH1.kPoisson)
+    hist.Sumw2()
 
     for i, count in enumerate(k):
-        # For k > 0, calculate the Garwood interval
-        if count > 0:
-            lower[i] = stats.poisson.ppf(alpha / 2, count)
-            upper[i] = stats.poisson.ppf(1 - alpha / 2, count)
-        else:
-            # Special case for zero counts: use the upper limit only
-            lower[i] = 0
-            upper[i] = stats.poisson.ppf(1 - alpha / 2, count + 1)
+        hist.SetBinContent(1, count)
+        
+        lower[i] = hist.GetBinContent(1) - hist.GetBinErrorLow(1)
+        upper[i] = hist.GetBinContent(1) + hist.GetBinErrorUp(1)
+        
+    hist.Delete()
     
     return lower, upper
