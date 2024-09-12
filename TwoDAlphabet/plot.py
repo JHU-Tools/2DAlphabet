@@ -555,7 +555,12 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     else:
         ax.set_ylabel(f'Events / {widths[0]} {units}')
         xerrs = None
-    ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
+
+    #Data plot with Garwood Poisson CI as error bars
+    lower_errors, upper_errors = poisson_conf_interval(data_arr)
+    yerr = [data_arr - lower_errors, upper_errors - data_arr]
+    ax.errorbar(x=bin_centers, y=data_arr, yerr=yerr, xerr=xerrs, label='Data', **errorbar_style)
+    #ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
 
     # Plot signals
     for i, sig in enumerate(sigNames):
@@ -1014,3 +1019,34 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
 
     if condor:
             execute_cmd('rm -r '+tmpdir)
+
+
+def poisson_conf_interval(k, confidence_level=0.68):
+    import scipy.stats as stats
+    """
+    Calculate Poisson 68% confidence interval using the Garwood interval.
+    
+    Parameters:
+    k (array): The number of counts (events) per bin.
+    confidence_level (float): Desired confidence level for the interval.
+    
+    Returns:
+    lower (array): Lower bound of the confidence interval.
+    upper (array): Upper bound of the confidence interval.
+    """
+    lower = np.zeros_like(k, dtype=float)
+    upper = np.zeros_like(k, dtype=float)
+    
+    alpha = 1. - confidence_level
+
+    for i, count in enumerate(k):
+        # For k > 0, calculate the Garwood interval
+        if count > 0:
+            lower[i] = stats.poisson.ppf(alpha / 2, count)
+            upper[i] = stats.poisson.ppf(1 - alpha / 2, count)
+        else:
+            # Special case for zero counts: use the upper limit only
+            lower[i] = 0
+            upper[i] = stats.poisson.ppf(1 - alpha / 2, count + 1)
+    
+    return lower, upper
