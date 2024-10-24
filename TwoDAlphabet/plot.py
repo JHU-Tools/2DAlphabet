@@ -898,17 +898,22 @@ def plot_correlation_matrix(varsToIgnore, threshold=0, corrText=False):
 
     fit_result_file.Close()
 
-def plot_gof(tag, subtag, seed=123456, condor=False):
+def plot_gof(tag, subtag, seed=123456, condor=False, lorien=False):
     with cd(tag+'/'+subtag):
         if condor:
-            tmpdir = 'notneeded/tmp/'
-            execute_cmd('mkdir '+tmpdir) 
-            execute_cmd('cat %s_%s_gof_toys_output_*.tgz | tar zxvf - -i --strip-components 2 -C %s'%(tag,subtag,tmpdir))
-            toy_limit_tree = ROOT.TChain('limit')
-            if len(glob.glob(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
-                raise Exception('No files found')
-            toy_limit_tree.Add(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root') 
-            
+            if not lorien:
+                tmpdir = 'notneeded/tmp/'
+                execute_cmd('mkdir '+tmpdir) 
+                execute_cmd('cat %s_%s_gof_toys_output_*.tgz | tar zxvf - -i --strip-components 2 -C %s'%(tag,subtag,tmpdir))
+                toy_limit_tree = ROOT.TChain('limit')
+                if len(glob.glob(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
+                    raise Exception('No files found')
+                toy_limit_tree.Add(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root') 
+            else:
+                toy_limit_tree = ROOT.TChain('limit')
+                if len(glob.glob('higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
+                    raise Exception('No files found')
+                toy_limit_tree.Add('higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')             
         else:
             toyOutput = ROOT.TFile.Open('higgsCombine_gof_toys.GoodnessOfFit.mH120.{seed}.root'.format(seed=seed))
             toy_limit_tree = toyOutput.Get('limit')
@@ -975,7 +980,7 @@ def plot_gof(tag, subtag, seed=123456, condor=False):
         cout.Print('gof_plot.pdf','pdf')
         cout.Print('gof_plot.png','png')
 
-    if condor:
+        if condor and not lorien:
             execute_cmd('rm -r '+tmpdir)
 
 def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, condor=False):
@@ -1021,7 +1026,7 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
         hsignstrength.Draw('pe')
         result_can.Print('signalInjection_r%s.png'%(str(injectedAmount).replace('.','p')),'png')
 
-    if condor:
+        if condor:
             execute_cmd('rm -r '+tmpdir)
 
 
