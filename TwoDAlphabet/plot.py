@@ -922,6 +922,10 @@ def plot_gof(tag, subtag, seed=123456, condor=False, lorien=False):
         # Get observation
         ROOT.gROOT.SetBatch(True)
         ROOT.gStyle.SetOptStat(False)
+        ROOT.gStyle.SetOptFit(True)
+        ROOT.gStyle.SetFuncColor(2)
+        ROOT.gStyle.SetPadTickX(1)  # to get the tick marks on the opposite side of the frame
+        ROOT.gStyle.SetPadTickY(1)  # to get the tick marks on the opposite side of the frame
         gof_data_file = ROOT.TFile.Open('higgsCombine_gof_data.GoodnessOfFit.mH120.root')
         gof_limit_tree = gof_data_file.Get('limit')
         gof_limit_tree.GetEntry(0)
