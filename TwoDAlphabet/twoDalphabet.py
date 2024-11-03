@@ -310,13 +310,14 @@ class TwoDAlphabet:
             MakeCard(subledger, subtag, workspaceDir)
 
 # -------- STAT METHODS ------------------ #
-    def MLfit(self, subtag, cardOrW='card.txt', rMin=-1, rMax=10, setParams={}, verbosity=0, usePreviousFit=False, defMinStrat=0, extra=''):
+    def MLfit(self, subtag, cardOrW='card.txt', rInit=1, rMin=-1, rMax=10, setParams={}, verbosity=0, usePreviousFit=False, defMinStrat=0, extra=''):
         _runDirSetup(self.tag+'/'+subtag)
         with cd(self.tag+'/'+subtag):
             _runMLfit(
                 cardOrW=cardOrW,
                 blinding=self.options.blindedFit,
                 verbosity=verbosity, 
+                rInit=rInit,
                 rMin=rMin, rMax=rMax,
                 setParams=setParams,
                 usePreviousFit=usePreviousFit,
@@ -918,19 +919,20 @@ def MakeCard(ledger, subtag, workspaceDir):
     card_new.close()
     ledger.Save(subtag)
 
-def _runMLfit(cardOrW, blinding, verbosity, rMin, rMax, setParams, usePreviousFit=False, defMinStrat=0, extra=''):
+def _runMLfit(cardOrW, blinding, verbosity, rInit, rMin, rMax, setParams, usePreviousFit=False, defMinStrat=0, extra=''):
     '''
     defMinStrat (int): sets the cminDefaultMinimizerStrategy option for the ML fit
     0: speed    (evaluate function less often)
     1: balance
     2: robustness   (waste function calls to get precise answers)
     Hesse (error/correlation estimation) will be run only if the strategy is 1 or 2
+    rInit: initial value of r
     '''
     if defMinStrat not in [0, 1, 2]:
         raise RuntimeError("Invalid cminDefaultMinimizerStrategy passed ({}) - please ensure that defMinStrat = 0, 1, or 2".format(defMinStrat))
     if usePreviousFit: param_options = ''
     else:              param_options = '--text2workspace "--channel-masks" '
-    params_to_set = ','.join(['mask_%s_SIG=1'%r for r in blinding]+['%s=%s'%(p,v) for p,v in setParams.items()]+['r=1'])
+    params_to_set = ','.join(['mask_%s_SIG=1'%r for r in blinding]+['%s=%s'%(p,v) for p,v in setParams.items()]+['r=%s'%rInit])
     param_options += '--setParameters '+params_to_set
 
     fit_cmd = 'combine -M FitDiagnostics {card_or_w} {param_options} --saveWorkspace --cminDefaultMinimizerStrategy {defMinStrat} --rMin {rmin} --rMax {rmax} -v {verbosity} {extra}'
