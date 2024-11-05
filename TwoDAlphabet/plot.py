@@ -367,7 +367,7 @@ class Plotter(object):
                 else:
                     these_axes = these_axes.loc[these_axes.logy.eq(True)]
 
-                if (len(these_axes) > 9) and (len(regionsToGroup) == 0):
+                if (len(these_axes) > 12) and (len(regionsToGroup) == 0):
                     raise RuntimeError('histlist of size %s not currently supported. Instead, call plot_projections() with regionsToGroup list describing the regions you want to group together.'%len(these_axes))
                 elif (len(these_axes) > 9) and (len(regionsToGroup) > 0):
                     validRegions = these_axes['region'].to_list()
@@ -656,6 +656,8 @@ def make_can(outname, padnames, padx=0, pady=0):
             padx = 3; pady = 2
         elif len(padnames) <= 9:
             padx = 3; pady = 3
+        elif len(padnames) <= 12:
+            padx = 6; pady = 2
         else:
             raise RuntimeError('histlist of size %s not currently supported'%len(padnames))
             #raise RuntimeError('histlist of size %s not currently supported: %s'%(len(padnames),[p.GetName() for p in padnames]))
