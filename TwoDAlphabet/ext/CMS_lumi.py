@@ -13,15 +13,16 @@ writeExtraText = True
 extraText   = "Preliminary"
 extraTextFont = 52 
 
-lumiTextSize     = 0.6
+lumiTextSize     = 0.35
 lumiTextOffset   = 0.2
 
-cmsTextSize      = 0.75
+cmsTextSize      = 0.4
 cmsTextOffset    = 0.15
 
-relPosX    = 0.045
-relPosY    = 0.035
-relExtraDY = 1.2
+relPosX    = 0.07
+relPosY    = -0.05
+relExtraDX = 2.8
+relExtraDY = 0.3
 
 extraOverCmsTextSize  = 0.76
 
@@ -160,8 +161,8 @@ def CMS_lumi(pad,  iPeriod=4,  iPosX=11, sim=False ):
                 latex.SetTextFont(extraTextFont)
                 latex.SetTextAlign(align_)
                 latex.SetTextSize(extraTextSize*t)
-                if not sim: latex.DrawLatex(posX_, posY_- relExtraDY*cmsTextSize*t, extraText)
-                else: latex.DrawLatex(posX_, posY_- relExtraDY*cmsTextSize*t, extraText + ' simulation')
+                if not sim: latex.DrawLatex(posX_+ relExtraDX*cmsTextSize*t, posY_-relExtraDY*cmsTextSize*t, extraText)
+                else: latex.DrawLatex(posX_+relExtraDX*cmsTextSize*t, posY_-relExtraDY*cmsTextSize*t, extraText + ' simulation')
     elif( writeExtraText ):
         if( iPosX==0):
             posX_ =   l +  relPosX*(1-l-r)
