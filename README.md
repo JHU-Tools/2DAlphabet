@@ -13,7 +13,7 @@ cd CombineHarvester/
 cd ..
 scramv1 b clean
 scramv1 b -j 16
-git clone --branch el9_debug git@github.com:JHU-Tools/2DAlphabet.git
+git clone --branch el9_matplotlib_plotting git@github.com:JHU-Tools/2DAlphabet.git
 python3 -m virtualenv twoD-env
 source twoD-env/bin/activate
 cd 2DAlphabet/
