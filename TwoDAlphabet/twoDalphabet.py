@@ -44,9 +44,6 @@ class TwoDAlphabet:
 
         if not loadPrevious:
             self._setupProjDir()
-            #DEBUG
-            print(self.df.iloc[0].source_filename)
-            print(self.df.iloc[0].source_histname)
             template_file = ROOT.TFile.Open(self.df.iloc[0].source_filename)
             template = template_file.Get(self.df.iloc[0].source_histname)
             template.SetDirectory(0)

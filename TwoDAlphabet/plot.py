@@ -42,6 +42,7 @@ class Plotter(object):
         self.df = pandas.DataFrame(columns=['process','region','process_type','title'])
         self.dir = 'plots_fit_{f}'.format(f=self.fittag)
         self.slices = {'x': {}, 'y': {}}
+        self.xslices = []
         self.root_out = None
         self.df_path = None
 
@@ -141,6 +142,7 @@ class Plotter(object):
 
             self.slices['x'][region] = {'vals': binning.xSlices,'idxs':binning.xSliceIdx}
             self.slices['y'][region] = {'vals': binning.ySlices,'idxs':binning.ySliceIdx}
+            self.xslices = binning.xSlices # Will be same for all regions, so ok to overwrite.
             
             for process in self.ledger.GetProcesses()+['TotalBkg']:
                 # Skip processes not in this region
@@ -309,7 +311,24 @@ class Plotter(object):
                 signals = group[group.process_type.eq('SIGNAL')]
 
                 for proj in ['postfit_projx','postfit_projy']:
-                    for islice in range(3):
+                    for islice in range(3): # 0: LOW, 1: SIG, 2: HIGH
+
+                        # First, check if blinding was requested. There are several cases to be considered (saved in "blinding" variable):
+                        #   0: No blinding requested
+                        #   0: Blinding requested, we are plotting y-projection, and we are not plotting SIG slice (do nothing)
+                        #   1: Blinding requested, we are plotting y-projection, and we are plotting SIG slice (NaN all data, remove 'Data' entry from legend)
+                        #   2: Blinding requested, we are plotting x-projection (NaN all data within the sig window)
+                        if (region in self.twoD.options.blindedPlots):
+                            if ('projx' in proj):
+                                blinding = 2
+                            else:
+                                if (islice == 1):
+                                    blinding = 1
+                                else:
+                                    blinding = 0
+                        else:
+                            blinding = 0
+
                         projn     = f'{proj}{islice}'
                         sig_projn = projn
                         if self.twoD.options.plotPrefitSigInFitB and self.fittag == 'b':
@@ -341,6 +360,7 @@ class Plotter(object):
                         make_ax_1D(
                             out_pad_name, 
                             binning, 
+                            blinding=blinding,
                             data=this_data, 
                             bkgs=these_bkgs, 
                             signals=these_signals, 
@@ -381,19 +401,6 @@ class Plotter(object):
                                     raise ValueError(f'Region "{r}" specified in regionsToGroup is not available in the 2DAlphabet workspace. Available regions:\n\t{validRegions}')
                                 r_axes = these_axes[these_axes['region'].str.match(r)].sort_values(by=['region','proj'])['ax'].to_list()
                                 new_axes += r_axes
-                            '''
-                            new_axes = []
-                            # Ensure that the regions are plotted in order provided
-                            for r in region:
-                                for ax in these_axes:
-                                    # As an edge case, assume r would be: CR_pass
-                                    # pad would be: plots_fit_b/base_figs/postfit_projx2_CR_pass.png
-                                    # but also: plots_fit_b/base_figs/postfit_projx2_ttbarCR_pass.png
-                                    # so we have to append an underscore to ensure we get the right one 
-                                    rNew = '_'+r
-                                    if rNew in ax:
-                                        new_axes.append(ax)
-                            '''
                             out_can_name = '{d}/{reg}_{proj}{logy}'.format(d=self.dir,proj=proj,logy=logy,reg='_and_'.join(region))
                             make_can(out_can_name, new_axes)
                         else:	# e.g. ['SR']
@@ -472,7 +479,7 @@ def make_pad_2D(outname, hist, style='lego', logzFlag=False, ROOTout=None,
     return pad
 
 
-def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='', slicetitle='',
+def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', subtitle='', slicetitle='',
             totalBkg=None, logyFlag=False, ROOTout=None, savePDF=False, savePNG=False,
             dataOff=False, datastyle='pe X0', year=1, addSignals=True, 
             lumiText=r'$138 fb^{-1} (13 TeV)$', extraText='Preliminary', units='GeV', hspace=0.0):
@@ -480,6 +487,7 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     Args:
         outname (str): Output file path + name.
         binning (Binning): TwoDAlphabet binning object for the given region from which to obtain binning info.
+        blinding (bool): Whether blinding has been requested for this plot.
         data (TH1): Data histogram.
         bkgs ([TH1]): List of background histograms (to be stacked).
         signals ([TH1]): List of signal histograms.
@@ -530,6 +538,27 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
 
     # Get the data array and total bkg
     data_arr = hist2array(data); data_arr = np.array([int(i) for i in data_arr]) # hist2array converts to floats which may leave very small differences when converting TH1 (int) -> array (float). This fixes it
+    # Do blinding if requested. To blind, replace zeroed bins with NaN so that no data point is plotted.
+    if blinding:
+        # 1: Blinding requested, we are plotting y-projection, and we are plotting SIG slice (Nan all data)
+        if blinding == 1:
+            blind_arr = np.empty_like(data_arr,dtype=float); blind_arr.fill(np.nan)
+            data_arr = blind_arr
+        # 2: Blinding requested, we are plotting x-projection (NaN all data within the sig window)
+        elif blinding == 2:
+            # Get the SIG window boundaries
+            sig_lo = binning.xSlices[1]
+            sig_hi = binning.xSlices[2]
+            # Set all data between these bounds to NaN. First have to convert to float to allow NaNs, but since they were already converted to ints there will be no rounding issues (i.e. all values will be <val>.0)
+            data_arr = data_arr.astype(float)
+            for i, data in enumerate(data_arr):
+                # Check if the data at this index is within the SIG bounds.
+                if (edges[i] >= sig_lo) and (edges[i] < sig_hi):
+                    assert(data == 0)
+                    data_arr[i] = np.nan
+        else:
+            raise ValueError(f'[make_ax_1D] ERROR: blinding option {blinding} not implemented.')
+
     if totalBkg:
         totalBkg_arr, totalBkg_err = hist2array(totalBkg, return_errors=True)
 
@@ -556,23 +585,26 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
         ax.set_ylabel(f'Events / {widths[0]} {units}')
         xerrs = None
 
-    #Data plot with Garwood Poisson CI as error bars
-    lower_errors, upper_errors = poisson_conf_interval(data_arr)
-    yerr = [data_arr - lower_errors, upper_errors - data_arr]
-    
-    ax.errorbar(x=bin_centers, y=data_arr, yerr=yerr, xerr=xerrs, label='Data', **errorbar_style)
-    #ax.errorbar(x=bin_centers, y=data_arr, yerr=np.sqrt(data_arr), xerr=xerrs, label='Data', **errorbar_style)
+    if (blinding != 1):
+        # Data plot with Garwood Poisson CI as error bars. For blinding == 2 this might cause divide by NaN error, so suppress
+        with np.errstate(divide='ignore'):
+            lower_errors, upper_errors = poisson_conf_interval(data_arr)
+        yerr = [data_arr - lower_errors, upper_errors - data_arr]
+        ax.errorbar(x=bin_centers, y=data_arr, yerr=yerr, xerr=xerrs, label='Data', **errorbar_style)
+    else:
+        ax.errorbar(x=bin_centers, y=data_arr, yerr=None, xerr=None, label='Data')
 
     # Plot signals
     for i, sig in enumerate(sigNames):
         sigarr = sigDict[f'{sig}_arr']
         ax.step(x=edges, y=np.hstack([sigarr, sigarr[-1]]), where='post', color=sigColors[i], label=sigNamesLatex[i])
 
+    # Set main plotting axis y-limits based on the totalBkg 
     if logyFlag:
-        ax.set_ylim(0.01, totalBkg_arr.max()*1e5)
+        ax.set_ylim(0.01, totalBkg_arr.max()*1e6)
         ax.set_yscale('log')
     else:
-        ax.set_ylim(0, totalBkg_arr.max()*1.38)
+        ax.set_ylim(0, totalBkg_arr.max()*1.75)
 
     # Make sure data and signal(s) come first 
     handles, labels = ax.get_legend_handles_labels()
@@ -580,7 +612,12 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
     unc_idx  = labels.index('Bkg. Unc.')
     sig_idxs = [i for i in range(unc_idx+1, data_idx)] # indices of all signals in legend
     # Resulting legend ordering will be Data, signal(s), bkgs, then bkg unc. The bkg ordering is already sent to this function properly.
-    leg_order = [data_idx] + sig_idxs + [idx for idx in range(len(labels)) if idx not in [data_idx] + sig_idxs]
+    if (blinding == 1):
+        # If plotting SIG window in y-projection, drop 'Data' entry from legend entirely (we are not plotting data at all here)
+        leg_order = sig_idxs + [idx for idx in range(len(labels)) if idx not in [data_idx] + sig_idxs]
+    else:
+        # Otherwise, keep 'Data' entry, even if it is partially blinded
+        leg_order = [data_idx] + sig_idxs + [idx for idx in range(len(labels)) if idx not in [data_idx] + sig_idxs]
     ax.legend([handles[idx] for idx in leg_order],[labels[idx] for idx in leg_order])
     ax.autoscale(axis='x', tight=True)
     ax.margins(x=0) # remove white space at left and right margins of plot 
@@ -599,13 +636,18 @@ def make_ax_1D(outname, binning, data, bkgs=[], signals=[], title='', subtitle='
             for i, title in enumerate(subtitle.split(';')):
                 ax.text(0.3, 0.95-(0.06*(i+1)), r'%s'%title, ha='center', va='top', fontsize='small', transform=ax.transAxes)
 
-    # pull
-    dataMinusBkg = data_arr - totalBkg_arr
-    data_error = np.where(dataMinusBkg<0, upper_errors - data_arr, data_arr - lower_errors)
-    sigmas = np.sqrt(data_error**2 + totalBkg_err**2) 
-    #sigmas = np.sqrt(np.sqrt(data_arr)*np.sqrt(data_arr) + totalBkg_err*totalBkg_err)
-    sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
-    pulls =  dataMinusBkg/sigmas
+    # Calculate pull (taking into consideration blinding)
+    if blinding == 1:
+        # 1: Blinding requested, we are plotting y-projection, and we are plotting SIG slice (Nan all pulls)
+        pulls = np.empty_like(data_arr,dtype=float); blind_arr.fill(np.nan)
+    else:
+        dataMinusBkg = data_arr - totalBkg_arr
+        data_error = np.where(dataMinusBkg<0, upper_errors - data_arr, data_arr - lower_errors)
+        sigmas = np.sqrt(data_error**2 + totalBkg_err**2) 
+        sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
+        pulls =  dataMinusBkg/sigmas
+    
+    # Plot pull on lower axis
     rax.bar(bin_centers,pulls, width=widths, color='gray')
     rax.set_ylim(-3,3)
     rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
