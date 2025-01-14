@@ -636,19 +636,7 @@ def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', 
             for i, title in enumerate(subtitle.split(';')):
                 ax.text(0.3, 0.95-(0.06*(i+1)), r'%s'%title, ha='center', va='top', fontsize='small', transform=ax.transAxes)
 
-    # Calculate pull (taking into consideration blinding)
-    if blinding == 1:
-        # 1: Blinding requested, we are plotting y-projection, and we are plotting SIG slice (Nan all pulls)
-        pulls = np.empty_like(data_arr,dtype=float); blind_arr.fill(np.nan)
-    else:
-        dataMinusBkg = data_arr - totalBkg_arr
-        data_error = np.where(dataMinusBkg<0, upper_errors - data_arr, data_arr - lower_errors)
-        sigmas = np.sqrt(data_error**2 + totalBkg_err**2) 
-        sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
-        pulls =  dataMinusBkg/sigmas
-    
-    # Plot pull on lower axis
-    rax.bar(bin_centers,pulls, width=widths, color='gray')
+    # Set up ratio plot axis
     rax.set_ylim(-3,3)
     rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
     axisTitle = binning.xtitle if projn == 'x' else binning.ytitle
@@ -656,6 +644,14 @@ def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', 
     rax.set_xlabel(r'${}$ [{}]'.format(axisTitle, units))
     rax.autoscale(axis='x', tight=True)
     rax.margins(x=0)
+    # Only plot the pulls if we are not entirely blinded (y-proj, SIG window)
+    if (blinding != 1):
+        dataMinusBkg = data_arr - totalBkg_arr
+        data_error = np.where(dataMinusBkg<0, upper_errors - data_arr, data_arr - lower_errors)
+        sigmas = np.sqrt(data_error**2 + totalBkg_err**2) 
+        sigmas[sigmas==0.0] = 1e-5 # avoid division by zero 
+        pulls =  dataMinusBkg/sigmas
+        rax.bar(bin_centers,pulls, width=widths, color='gray')
 
     if savePDF:
         plt.savefig(f'{outname}.pdf')
