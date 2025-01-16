@@ -325,7 +325,7 @@ def _combineTool_impacts_fix(fileNameExpected):
     potential_files_to_rename = glob.glob(seed_version)
 
     # Only run if there are seeded files to rename
-    if potential_files_to_rename > 0:
+    if len(potential_files_to_rename) > 0:
         all_seeds = list(set([f.split('.')[-2] for f in potential_files_to_rename]))
         if len(all_seeds) > 1:
             raise RuntimeError('More than one seed found when trying to move files for combineTool (%s). Clean up the area and try again.'%all_seeds)
