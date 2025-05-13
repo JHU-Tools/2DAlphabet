@@ -1,0 +1,8 @@
+universe	= vanilla
+executable 	= TEMPSCRIPT
+RequestMemory = 1000
+Output 		= notneeded/output_$(Cluster)_$(Process).stdout
+Error 		= notneeded/output_$(Cluster)_$(Process).stderr
+Log 		= notneeded/output_$(Cluster)_$(Process).log
+Arguments 	= "$(args)"
+Queue args from TEMPARGS

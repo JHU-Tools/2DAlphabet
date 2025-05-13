@@ -1,6 +1,46 @@
 import subprocess, json, ROOT, os, copy, time, glob
+import numpy as np
 from collections import defaultdict
 from contextlib import contextmanager
+
+# Function stolen from https://root-forum.cern.ch/t/trying-to-convert-rdf-generated-histogram-into-numpy-array/53428/3
+def hist2array(hist, include_overflow=False, return_errors=False):
+    '''Create a numpy array from a ROOT histogram without external tools like root_numpy.
+
+    Args:
+        hist (TH1): Input ROOT histogram
+        include_overflow (bool, optional): Whether or not to include the under/overflow bins. Defaults to False. 
+        return_errs (bool, optional): Whether or not to return an array containing the sum of the weights squared. Defaults to False.
+
+    Returns:
+        arr (np.ndarray): Array representing the ROOT histogram
+        errors (np.ndarray): Array containing the sqrt of the sum of weights squared
+    '''
+    hist.BufferEmpty()
+    root_arr = hist.GetArray()
+    if isinstance(hist, ROOT.TH1):
+        shape = (hist.GetNbinsX() + 2,)
+    elif isinstance(hist, ROOT.TH2):
+        shape = (hist.GetNbinsY() + 2, hist.GetNbinsX() + 2)
+    elif isinstance(hist, ROOT.TH3):
+        shape = (hist.GetNbinsZ() + 2, hist.GetNbinsY() + 2, hist.GetNbinsX() + 2)
+    else:
+        raise TypeError(f'hist must be an instance of ROOT.TH1, ROOT.TH2, or ROOT.TH3')
+
+    # Get the array and, optionally, errors
+    arr = np.ndarray(shape, dtype=np.float64, buffer=root_arr, order='C')
+    if return_errors:
+        errors = np.sqrt(np.ndarray(shape, dtype='f8', buffer=hist.GetSumw2().GetArray()))
+
+    if not include_overflow:
+        arr = arr[tuple([slice(1, -1) for idim in range(arr.ndim)])]
+        if return_errors:
+            errors = errors[tuple([slice(1, -1) for idim in range(errors.ndim)])]
+
+    if return_errors:
+        return arr, errors
+    else:
+        return arr
 
 # Function stolen from https://stackoverflow.com/questions/9590382/forcing-python-json-module-to-work-with-ascii
 def open_json(f):
@@ -296,7 +336,7 @@ def _combineTool_impacts_fix(fileNameExpected):
 
 # ----------------- Inline condor submission --------------------
 class CondorRunner():
-    def __init__(self, name, primaryCmds, toPkg, runIn, toGrab, remakeEnv=False, eosRootfileTarball=None):
+    def __init__(self, name, primaryCmds, toPkg, runIn, toGrab, remakeEnv=False, eosRootfileTarball=None, lorienTag=False):
         '''Should be run in a CMSSW/src directory and not in a nested folder. All paths
         (besides the EOS rootfile tarball path) are treated relative to this folder.
 
@@ -315,23 +355,39 @@ class CondorRunner():
         self.primary_cmds = primaryCmds
         self.rootfile_tarball_path = eosRootfileTarball
         self.cmssw = os.environ['CMSSW_BASE'].split('/')[-1]
+        self.lorienTag = lorienTag
         if not os.path.exists('notneeded/'): execute_cmd('mkdir notneeded')
-        self.env_tarball_path = make_env_tarball(remakeEnv)
-        self.pkg_tarball_path = self._make_pkg_tarball(toPkg) if toPkg != None else ''
-        self.run_script_path = self._make_run_script()
+
+        if not self.lorienTag:
+            self.env_tarball_path = make_env_tarball(remakeEnv)
+            self.pkg_tarball_path = self._make_pkg_tarball(toPkg) if toPkg != None else ''
+            self.run_script_path = self._make_run_script()
+        else:
+            self.run_script_path = self._make_run_script_lorien()
         self.run_args_path = self.run_script_path.replace('.sh','_args.txt')
 
+
     def submit(self):
-        abs_path = os.getcwd()
-        abs_twoD_dir_base = abs_path[:abs_path.find(self.cmssw)]+self.cmssw+'/src/2DAlphabet/TwoDAlphabet/'
+        abs_twoD_dir_base = os.path.dirname(os.path.abspath(__file__))
         timestr = time.strftime("%Y%m%d-%H%M%S")
         out_jdl = 'temp_'+timestr+'_jdl'
 
-        execute_cmd("sed 's$TEMPSCRIPT${0}$g' {1}/condor/jdl_template > {2}".format(self.run_script_path, abs_twoD_dir_base, out_jdl))
-        execute_cmd("sed -i 's$TEMPTAR${0}$g' {1}".format(self.pkg_tarball_path, out_jdl))
-        execute_cmd("sed -i 's$TEMPARGS${0}$g' {1}".format(self.run_args_path, out_jdl))
-        execute_cmd("condor_submit "+out_jdl)
-        execute_cmd("mv {0} notneeded/".format(out_jdl))
+        if not self.lorienTag:
+            execute_cmd("sed 's$TEMPSCRIPT${0}$g' {1}/condor/jdl_template > {2}".format(self.run_script_path, abs_twoD_dir_base, out_jdl))
+            execute_cmd("sed -i 's$TEMPTAR${0}$g' {1}".format(self.pkg_tarball_path, out_jdl))
+            execute_cmd("sed -i 's$TEMPARGS${0}$g' {1}".format(self.run_args_path, out_jdl))
+            execute_cmd("condor_submit "+out_jdl)
+            execute_cmd("mv {0} notneeded/".format(out_jdl))
+        else:
+            execute_cmd("sed 's$TEMPSCRIPT${0}$g' {1}/condor/jdl_template_lorien > {2}".format(self.run_script_path, abs_twoD_dir_base, out_jdl))
+            execute_cmd("sed -i 's$TEMPARGS${0}$g' {1}".format(self.run_args_path, out_jdl))
+            execute_cmd("chmod +x {0}".format(self.run_script_path))
+            execute_cmd("condor_submit "+out_jdl)
+            execute_cmd("mv {0} notneeded/".format(out_jdl))
+            print("Waiting for all jobs to finish...")
+            for log in glob.glob('notneeded/output_*.log'):
+                execute_cmd('condor_wait {0}'.format(log))
+            print("All jobs finished.")
 
     def _make_pkg_tarball(self,to_pkg):
         start_dir = os.getcwd()
@@ -384,6 +440,29 @@ class CondorRunner():
 
         return os.path.abspath(shell_name)
 
+    def _make_run_script_lorien(self):
+        blocks = []
+
+        blocks.append("#!/bin/bash")
+        blocks.append("echo RUNNING IN DIR: $(pwd)")
+        blocks.append("source /cvmfs/cms.cern.ch/cmsset_default.sh")
+        blocks.append('cd {0}'.format(os.environ['CMSSW_BASE']))
+        blocks.append('eval `scramv1 runtime -sh`')
+        blocks.append('cd -')
+        blocks.append('echo $*')
+        blocks.append('$*')
+
+        shell_name = 'run_'+self.name+'.sh'
+        with open(shell_name,'w') as run_script:
+            for block in blocks:
+                run_script.write(block+'\n')
+
+        with open(shell_name.replace('.sh','_args.txt'),'w') as run_args:
+            for c in self.primary_cmds:
+                run_args.write(c+'\n')
+
+        return os.path.abspath(shell_name)
+    
 def make_env_tarball(makeEnv=True):
     dir_base = os.environ['CMSSW_BASE']
     cmssw = dir_base.split('/')[-1]

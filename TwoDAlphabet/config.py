@@ -3,6 +3,7 @@ import ROOT, json, os, pandas, re, warnings, itertools
 from numpy import nan
 import pprint
 pp = pprint.PrettyPrinter(indent=4)
+from TwoDAlphabet.plotstyle import mpl_to_root_colors, root_to_matplotlib_color
 from TwoDAlphabet.helpers import copy_update_dict, open_json, parse_arg_dict, replace_multi
 from TwoDAlphabet.binning import Binning, copy_hist_with_new_bins, get_bins_from_hist
 
@@ -99,10 +100,13 @@ class Config:
         json.dump(self.config,file_out,indent=2,sort_keys=True)
         file_out.close()
 
-    def FullTable(self):
+    def FullTable(self,verbose=False):
         '''Generate full table of processes, regions, and systematic variations
         to account for, including relevant information for each. The table is
         returned as a pandas DataFrame for convenient manipulation.
+
+        Args:
+            verbose (bool): If True, prints the regions, processes, and systematics dataframe tables to .txt files.
 
         Returns:
             pandas.DataFrame: Table
@@ -111,9 +115,10 @@ class Config:
         processes = self._processTable()
         systematics = self._systematicsTable()
 
-        regions.to_string('regions.txt')
-        processes.to_string('processes.txt')
-        systematics.to_string('systematics.txt')
+        if verbose:
+            regions.to_string('regions.txt')
+            processes.to_string('processes.txt')
+            systematics.to_string('systematics.txt')
 
         for p,group in processes.groupby(processes.index):
             if group.title.nunique() > 1:
@@ -411,7 +416,11 @@ class OrganizedHists():
                     h.SetName(row.out_histname)
 
                 h.SetTitle(row.out_histname)
-                h.SetFillColor(row.color)
+                if row.color not in mpl_to_root_colors.keys():
+                    available_colors = '", "'.join(mpl_to_root_colors.keys())
+                    raise ValueError(f'Color "{row.color}" not defined. Please add the ROOT TColor code to the "mpl_to_root_colors" dictionary defined in TwoDAlphabet.plotstyle. Available default colors are: "{available_colors}"')
+                else:
+                    h.SetFillColor(mpl_to_root_colors[row.color])
 
                 self.file.WriteTObject(h, row.out_histname)
                 self.CreateSubRegions(h, binning)
