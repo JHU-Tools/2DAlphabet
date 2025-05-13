@@ -307,17 +307,18 @@ class TwoDAlphabet:
             MakeCard(subledger, subtag, workspaceDir)
 
 # -------- STAT METHODS ------------------ #
-    def MLfit(self, subtag, cardOrW='card.txt', rMin=-1, rMax=10, setParams={}, verbosity=0, usePreviousFit=False, defMinStrat=0, extra=''):
+    def MLfit(self, subtag, cardOrW='card.txt', rInit=1, rMin=-1, rMax=10, setParams={}, verbosity=0, usePreviousFit=False, defMinStrat=0, extra=''):
         _runDirSetup(self.tag+'/'+subtag)
         with cd(self.tag+'/'+subtag):
             _runMLfit(
                 cardOrW=cardOrW,
                 blinding=self.options.blindedFit,
                 verbosity=verbosity, 
+                rInit=rInit,
                 rMin=rMin, rMax=rMax,
                 setParams=setParams,
                 usePreviousFit=usePreviousFit,
-        defMinStrat=defMinStrat,
+                defMinStrat=defMinStrat,
                 extra=extra)
             make_postfit_workspace('')
             # systematic_analyzer_cmd = 'python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/systematicsAnalyzer.py card.txt --all -f html > systematics_table.html'
@@ -470,7 +471,7 @@ class TwoDAlphabet:
         return masked_regions
 
     def GoodnessOfFit(self, subtag, ntoys, card_or_w='card.txt', freezeSignal=False, seed=123456,
-                            verbosity=0, extra='', condor=False, eosRootfiles=None, njobs=0, makeEnv=False):
+                            verbosity=0, extra='', condor=False, eosRootfiles=None, njobs=0, makeEnv=False, lorienTag=False):
         # NOTE: There's no way to blind data here - need to evaluate it to get the p-value
         # param_str = '' if setParams == {} else '--setParameters '+','.join(['%s=%s'%(p,v) for p,v in setParams.items()])
 
@@ -527,7 +528,8 @@ class TwoDAlphabet:
                     runIn=run_dir,
                     toGrab=run_dir+'/higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root',
                     eosRootfileTarball=eosRootfiles,
-                    remakeEnv=makeEnv
+                    remakeEnv=makeEnv,
+                    lorienTag=lorienTag
                 )
                 condor.submit()
             
@@ -585,8 +587,8 @@ class TwoDAlphabet:
                 )
                 condor.submit()
 
-    def Limit(self, subtag, card_or_w='card.txt', blindData=True, verbosity=0,
-                    setParams={}, condor=False, eosRootfiles=None, makeEnv=False):
+    def Limit(self, subtag, card_or_w='card.txt', blindData=True, verbosity=0, defMinStrat=0,
+                    setParams={}, condor=False, eosRootfiles=None, makeEnv=False, extra=''):
         if subtag == '': 
             raise RuntimeError('The subtag for limits must be non-empty so that the limit will be run in a nested directory.')
 
@@ -594,7 +596,7 @@ class TwoDAlphabet:
         _runDirSetup(run_dir)
 
         with cd(run_dir):
-            limit_cmd = _runLimit(blindData, verbosity, setParams, card_or_w, condor) # runs on this line if location == 'local'
+            limit_cmd = _runLimit(blindData, verbosity, defMinStrat, setParams, card_or_w, condor, extra) # runs on this line if location == 'local'
             
             if condor:
                 if not makeEnv:
@@ -605,7 +607,7 @@ class TwoDAlphabet:
                         toPkg=self.tag+'/',
                         toGrab=run_dir+'/higgsCombineTest.AsymptoticLimits.mH120.root',
                         eosRootfileTarball=eosRootfiles,
-                remakeEnv=makeEnv
+                        remakeEnv=makeEnv
                     )
                     condor.submit()
                 
@@ -914,26 +916,28 @@ def MakeCard(ledger, subtag, workspaceDir):
     card_new.close()
     ledger.Save(subtag)
 
-def _runMLfit(cardOrW, blinding, verbosity, rMin, rMax, setParams, usePreviousFit=False, defMinStrat=0, extra=''):
+def _runMLfit(cardOrW, blinding, verbosity, rInit, rMin, rMax, setParams, defMinStrat, usePreviousFit=False, extra=''):
     '''
     defMinStrat (int): sets the cminDefaultMinimizerStrategy option for the ML fit
     0: speed    (evaluate function less often)
     1: balance
     2: robustness   (waste function calls to get precise answers)
     Hesse (error/correlation estimation) will be run only if the strategy is 1 or 2
+    rInit: initial value of r
     '''
     if defMinStrat not in [0, 1, 2]:
         raise RuntimeError("Invalid cminDefaultMinimizerStrategy passed ({}) - please ensure that defMinStrat = 0, 1, or 2".format(defMinStrat))
+
     if usePreviousFit: param_options = ''
     else:              param_options = '--text2workspace "--channel-masks" '
-    params_to_set = ','.join(['mask_%s_SIG=1'%r for r in blinding]+['%s=%s'%(p,v) for p,v in setParams.items()]+['r=1'])
+    params_to_set = ','.join(['mask_%s_SIG=1'%r for r in blinding]+['%s=%s'%(p,v) for p,v in setParams.items()]+['r=%s'%rInit])
     param_options += '--setParameters '+params_to_set
 
     fit_cmd = 'combine -M FitDiagnostics {card_or_w} {param_options} --saveWorkspace --cminDefaultMinimizerStrategy {defMinStrat} --rMin {rmin} --rMax {rmax} -v {verbosity} {extra}'
     fit_cmd = fit_cmd.format(
         card_or_w='initifalFitWorkspace.root --snapshotName initialFit' if usePreviousFit else cardOrW,
         param_options=param_options,
-    defMinStrat=defMinStrat,
+        defMinStrat=defMinStrat,
         rmin=rMin,
         rmax=rMax,
         verbosity=verbosity,
@@ -948,18 +952,24 @@ def _runMLfit(cardOrW, blinding, verbosity, rMin, rMax, setParams, usePreviousFi
 
     execute_cmd(fit_cmd, out='FitDiagnostics.log')
 
-def _runLimit(blindData, verbosity, setParams, card_or_w='card.txt', condor=False):
+def _runLimit(blindData, verbosity, defMinStrat, setParams, card_or_w='card.txt', condor=False, extra=''):
     # card_or_w could be `morphedWorkspace.root --snapshotName morphedModel`
+
+    if defMinStrat not in [0, 1, 2]:
+        raise RuntimeError("Invalid cminDefaultMinimizerStrategy passed ({}) - please ensure that defMinStrat = 0, 1, or 2".format(defMinStrat))
+
     param_options = ''
     if len(setParams) > 0:
         param_options = '--setParameters '+','.join('%s=%s'%(k,v) for k,v in setParams.items())
 
-    limit_cmd = 'combine -M AsymptoticLimits -d {card_or_w} --saveWorkspace --cminDefaultMinimizerStrategy 0 {param_opt} {blind_opt} -v {verb}' 
+    limit_cmd = 'combine -M AsymptoticLimits -d {card_or_w} --saveWorkspace --cminDefaultMinimizerStrategy {defMinStrat} {param_opt} {blind_opt} -v {verb} {extra}' 
     limit_cmd = limit_cmd.format(
         card_or_w=card_or_w,
         blind_opt='--run=blind' if blindData else '',
         param_opt=param_options,
-        verb=verbosity
+        verb=verbosity,
+        defMinStrat=defMinStrat,
+        extra=extra
     )
 
     # Run combine if not on condor

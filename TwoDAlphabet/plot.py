@@ -387,7 +387,7 @@ class Plotter(object):
                 else:
                     these_axes = these_axes.loc[these_axes.logy.eq(True)]
 
-                if (len(these_axes) > 9) and (len(regionsToGroup) == 0):
+                if (len(these_axes) > 12) and (len(regionsToGroup) == 0):
                     raise RuntimeError('histlist of size %s not currently supported. Instead, call plot_projections() with regionsToGroup list describing the regions you want to group together.'%len(these_axes))
                 elif (len(these_axes) > 9) and (len(regionsToGroup) > 0):
                     validRegions = these_axes['region'].to_list()
@@ -694,6 +694,8 @@ def make_can(outname, padnames, padx=0, pady=0):
             padx = 3; pady = 2
         elif len(padnames) <= 9:
             padx = 3; pady = 3
+        elif len(padnames) <= 12:
+            padx = 6; pady = 2
         else:
             raise RuntimeError('histlist of size %s not currently supported'%len(padnames))
             #raise RuntimeError('histlist of size %s not currently supported: %s'%(len(padnames),[p.GetName() for p in padnames]))
@@ -936,17 +938,22 @@ def plot_correlation_matrix(varsToIgnore, threshold=0, corrText=False):
 
     fit_result_file.Close()
 
-def plot_gof(tag, subtag, seed=123456, condor=False):
+def plot_gof(tag, subtag, seed=123456, condor=False, lorien=False):
     with cd(tag+'/'+subtag):
         if condor:
-            tmpdir = 'notneeded/tmp/'
-            execute_cmd('mkdir '+tmpdir) 
-            execute_cmd('cat %s_%s_gof_toys_output_*.tgz | tar zxvf - -i --strip-components 2 -C %s'%(tag,subtag,tmpdir))
-            toy_limit_tree = ROOT.TChain('limit')
-            if len(glob.glob(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
-                raise Exception('No files found')
-            toy_limit_tree.Add(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root') 
-            
+            if not lorien:
+                tmpdir = 'notneeded/tmp/'
+                execute_cmd('mkdir '+tmpdir) 
+                execute_cmd('cat %s_%s_gof_toys_output_*.tgz | tar zxvf - -i --strip-components 2 -C %s'%(tag,subtag,tmpdir))
+                toy_limit_tree = ROOT.TChain('limit')
+                if len(glob.glob(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
+                    raise Exception('No files found')
+                toy_limit_tree.Add(tmpdir+'higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root') 
+            else:
+                toy_limit_tree = ROOT.TChain('limit')
+                if len(glob.glob('higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')) == 0:
+                    raise Exception('No files found')
+                toy_limit_tree.Add('higgsCombine_gof_toys.GoodnessOfFit.mH120.*.root')             
         else:
             toyOutput = ROOT.TFile.Open('higgsCombine_gof_toys.GoodnessOfFit.mH120.{seed}.root'.format(seed=seed))
             toy_limit_tree = toyOutput.Get('limit')
@@ -955,6 +962,10 @@ def plot_gof(tag, subtag, seed=123456, condor=False):
         # Get observation
         ROOT.gROOT.SetBatch(True)
         ROOT.gStyle.SetOptStat(False)
+        ROOT.gStyle.SetOptFit(True)
+        ROOT.gStyle.SetFuncColor(2)
+        ROOT.gStyle.SetPadTickX(1)  # to get the tick marks on the opposite side of the frame
+        ROOT.gStyle.SetPadTickY(1)  # to get the tick marks on the opposite side of the frame
         gof_data_file = ROOT.TFile.Open('higgsCombine_gof_data.GoodnessOfFit.mH120.root')
         gof_limit_tree = gof_data_file.Get('limit')
         gof_limit_tree.GetEntry(0)
@@ -1013,7 +1024,7 @@ def plot_gof(tag, subtag, seed=123456, condor=False):
         cout.Print('gof_plot.pdf','pdf')
         cout.Print('gof_plot.png','png')
 
-    if condor:
+        if condor and not lorien:
             execute_cmd('rm -r '+tmpdir)
 
 def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, condor=False):
@@ -1059,7 +1070,7 @@ def plot_signalInjection(tag, subtag, injectedAmount, seed=123456, stats=True, c
         hsignstrength.Draw('pe')
         result_can.Print('signalInjection_r%s.png'%(str(injectedAmount).replace('.','p')),'png')
 
-    if condor:
+        if condor:
             execute_cmd('rm -r '+tmpdir)
 
 
