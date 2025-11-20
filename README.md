@@ -13,7 +13,7 @@ cd HiggsAnalysis/CombinedLimit
 git fetch origin
 git checkout v10.0.1
 cd ../../
-git clone --branch CMSWW_14_1_0_pre4 git@github.com:JHU-Tools/CombineHarvester.git
+git clone --branch CMSSW_14_1_0_pre4 git@github.com:JHU-Tools/CombineHarvester.git
 scramv1 b clean
 scramv1 b -j 16
 git clone git@github.com:JHU-Tools/2DAlphabet.git

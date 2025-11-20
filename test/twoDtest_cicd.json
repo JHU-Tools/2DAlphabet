@@ -1,5 +1,5 @@
 {
-    "NAME": "CR_modification",
+    "NAME": "CR_append",
     "GLOBAL": {
         "FILE": "THselection_$process.root",
         "FILE_UP": "THselection_$process_$syst_up.root",
@@ -7,13 +7,29 @@
         "HIST": "MthvMh_particleNet_$region__nominal",
         "HIST_UP": "MthvMh_particleNet_$region__$syst_up",
         "HIST_DOWN": "MthvMh_particleNet_$region__$syst_down",
-        "path": "test/data"
+        "path": "data"
     },
     "PROCESSES": {
+        "data_obs": {
+            "SYSTEMATICS":[],
+            "SCALE": 1.0,
+            "COLOR": "black",
+            "TYPE": "DATA",
+            "ALIAS":"Data_16",
+            "TITLE": "Data",
+            "LOC": "path/FILE:HIST"
+	    },
+        "ttbar_16": {
+            "SYSTEMATICS":["lumi","TT_xsec","TptReweight"],
+            "SCALE": 1.0,
+            "COLOR": "red",
+            "TYPE": "BKG",
+            "LOC": "path/FILE:HIST"
+        },
         "TprimeB-1800_16": {
             "SYSTEMATICS":["lumi","JES"],
             "SCALE": 1.0,
-            "COLOR": 0,
+            "COLOR": "violet",
             "TYPE": "SIGNAL",
             "LOC": "path/FILE:HIST"
         }
@@ -25,7 +41,7 @@
             "BINNING": "default"
         },
         "CR_fail": {
-            "PROCESSES": ["TprimeB-1800_16"],
+            "PROCESSES": ["ttbar_16"],
             "BINNING": "default"
         }
     },
@@ -33,6 +49,15 @@
     "SYSTEMATICS": {
         "lumi": {
             "VAL": 1.018
+        },
+        "TT_xsec": {
+            "VALUP": 1.20,
+            "VALDOWN": 0.8
+        },
+        "TptReweight":{
+            "UP": "path/FILE:HIST_UP",
+            "DOWN": "path/FILE:HIST_DOWN",
+            "SIGMA": 1.0
         },
         "JES": {
             "ALIAS": "JES",
@@ -62,5 +87,15 @@
                 "NBINS": 22
             }
         }
+    },
+    "OPTIONS": {
+        "blindedPlots": [],
+        "blindedFit": [],
+        "haddSignals": true,
+        "plotPrefitSigInFitB": true,
+        "plotTitles":false,
+	    "plotTemplateComparisons": false,
+        "plotEvtsPerUnit": true,
+        "year": 16
     }
 }

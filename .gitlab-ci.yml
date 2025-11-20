@@ -1,14 +1,85 @@
-test:
+stages:
+  - install
+  - run_analysis
+
+variables:
+  CMSSW_VERSION: "CMSSW_14_1_0_pre4"
+  SCRAM_ARCH: "el9_amd64_gcc13"
+
+cmssw_install:
+  stage: install
+  image: cmssw/el9:x86_64
   tags:
     - cvmfs
-  only:
-    - master                    # master release branch
-    - develop                   # development branch 
-  before_script:
-    - set -o xtrace             # Print command before executing it
-    - set -o errexit            # make your script exit when a command fails.
-    - set -o pipefail           # exit status of the last command that threw a non-zero exit code is returned
-    - shopt -s expand_aliases   # CRUCIAL for cmsrel, etc as aliases not expanded in non-interactive shells
+  rules:
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    when: always
+  - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+    when: always
   script:
-    # check CVMFS
-    - ls /cvmfs/cms.cern.ch/
+    - echo "Setting up CMSSW ${CMSSW_VERSION}"
+    - source /cvmfs/cms.cern.ch/cmsset_default.sh
+    - scram project CMSSW ${CMSSW_VERSION}
+    - cd ${CMSSW_VERSION}/src
+    - eval `scramv1 runtime -sh`
+
+    - git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
+    - cd HiggsAnalysis/CombinedLimit
+    - git fetch origin
+    - git checkout v10.0.1
+    - cd ../../
+    - git clone --branch CMSSW_14_1_0_pre4 https://github.com/JHU-Tools/CombineHarvester.git
+    - scramv1 b clean
+    - scramv1 b -j 16
+
+    - cd $CI_PROJECT_DIR
+
+    - python3 -m virtualenv twoD-env
+    - source twoD-env/bin/activate
+    - python setup.py develop
+
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ${CMSSW_VERSION}/
+      - twoD-env/
+
+run_analysis:
+  stage: run_analysis
+  image: cmssw/el9:x86_64
+  tags:
+    - cvmfs
+  dependencies:
+    - cmssw_install
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+      when: always
+
+    - when: never
+
+  before_script:
+    - set -o xtrace
+    - set -o errexit
+    - set -o pipefail
+    - shopt -s expand_aliases
+    - source /cvmfs/cms.cern.ch/cmsset_default.sh
+    - cd ${CMSSW_VERSION}/src
+    - eval `scramv1 runtime -sh`
+    - which PostFit2DShapesFromWorkspace
+    - cd $CI_PROJECT_DIR
+    - source twoD-env/bin/activate
+    - cd test
+  script:
+    - python test_CR.py
+
+  artifacts:
+    paths:
+      - test/limits_cicd.json
+      - test/CR_cicd/TprimeB-1800_16_area/*.root
+      - test/CR_cicd/TprimeB-1800_16_area/*.txt
+      - test/CR_cicd/TprimeB-1800_16_area/plots_fit_b/postfit_proj*pdf
+      - test/CR_cicd/TprimeB-1800_16_area/plots_fit_s/postfit_proj*pdf
+    expire_in: 2 weeks
