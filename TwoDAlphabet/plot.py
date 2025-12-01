@@ -139,9 +139,10 @@ class Plotter(object):
                     blinding = [1]
                 else: blinding = []
             else: blinding = []
-
+            
             self.slices['x'][region] = {'vals': binning.xSlices,'idxs':binning.xSliceIdx}
             self.slices['y'][region] = {'vals': binning.ySlices,'idxs':binning.ySliceIdx}
+            print(self.slices) 
             self.xslices = binning.xSlices # Will be same for all regions, so ok to overwrite.
             
             for process in self.ledger.GetProcesses()+['TotalBkg']:
@@ -168,19 +169,27 @@ class Plotter(object):
                     # 2D distributions first
                     out2d_name = '%s_%s_%s_2D'%(process,region,time)
 
-                    low_name = loc_base.format(r=region, c='LOW', t=time, p=process)
-                    sig_name = loc_base.format(r=region, c='SIG', t=time, p=process)
-                    high_name = loc_base.format(r=region, c='HIGH',t=time, p=process)
+                    #low_name = loc_base.format(r=region, c='LOW', t=time, p=process)
+                    #sig_name = loc_base.format(r=region, c='SIG', t=time, p=process)
+                    #high_name = loc_base.format(r=region, c='HIGH',t=time, p=process)
                     
-                    low  = shapes_file.Get(low_name)
-                    sig  = shapes_file.Get(sig_name)
-                    high = shapes_file.Get(high_name)
+                    #low  = shapes_file.Get(low_name)
+                    #sig  = shapes_file.Get(sig_name)
+                    #high = shapes_file.Get(high_name)
 
-                    if low == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(low_name, self.fittag))
-                    if sig == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(sig_name, self.fittag))
-                    if high == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(high_name, self.fittag))
+                    #if low == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(low_name, self.fittag))
+                    #if sig == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(sig_name, self.fittag))
+                    #if high == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(high_name, self.fittag))
 
-                    full = stitch_hists_in_x(out2d_name, binning, [low,sig,high], blinded=blinding if process == 'data_obs' else [])
+                    #full = stitch_hists_in_x(out2d_name, binning, [low,sig,high], blinded=blinding if process == 'data_obs' else [])
+                    subregion_hists = []
+                    for subregion in binning.xbinByCat:
+                        subregion_name = loc_base.format(r=region, c=subregion, t=time, p=process)
+                        subregion_hist = shapes_file.Get(subregion_name)
+                        if subregion_hist == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(subregion_name, self.fittag))
+                        subregion_hists.append(subregion_hist)
+                    full = stitch_hists_in_x(out2d_name, binning, subregion_hists, blinded=blinding if process == 'data_obs' else [])
+
                     full.SetMinimum(0)
                     full.SetTitle('%s, %s, %s'%(proc_title,region,time))
 
@@ -190,7 +199,7 @@ class Plotter(object):
                     out_proj_name = '{p}_{r}_{t}_proj{x}{i}'
                     for proj in ['X','Y']:
                         slices = self.slices['x' if proj == 'Y' else 'y'][region]
-
+                        print(proj, slices)
                         for islice in range(3):
                             hname = out_proj_name.format(p=process,r=region,t=time,x=proj.lower(),i=islice)
                             start,stop = _get_start_stop(islice,slices['idxs'])
@@ -509,7 +518,12 @@ def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', 
     islice = outname.split('/')[-1].split('_')[1].split('proj')[-1][1]; islice = int(islice)
     if projn == 'x':
         xbins = binning.xbinByCat
-        edges = np.array(xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH'])
+        #edges = np.array(xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH'])
+        edges = xbins["Region0"][:] #make a copy - not a reference
+        for cat in xbins:
+            if cat != "Region0":
+                edges += xbins[cat][1:]
+        edges = np.array(edges)
     else:
         edges = np.array(binning.ybinList)
     widths = np.diff(edges)     # obtain bin widths
@@ -731,7 +745,7 @@ def make_systematic_plots(twoD):
 
         nominal_full = twoD.organizedHists.Get(process=p, region=r, systematic='')
         binning, _ = twoD.GetBinningFor(r)
-
+        print(r, binning.xbinByCat)
         for axis in ['X','Y']:
 
             nominal_hist = getattr(nominal_full,'Projection'+axis)('%s_%s_%s_%s'%(p,r,'nom','proj'+axis))
@@ -740,7 +754,12 @@ def make_systematic_plots(twoD):
             # Get the bin edges from the 2DAlphabet binning object. Avoid edge duplication in the case of X-axis stitching
             if axis == 'X':
                 xbins = binning.xbinByCat
-                edges = xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH']
+                #edges = xbins['LOW'][:-1]+xbins['SIG'][:-1]+xbins['HIGH']
+                edges = xbins["Region0"][:] #make a copy - not a reference
+                for cat in xbins:
+                    if cat != "Region0":
+                        edges += xbins[cat][1:]
+
             else:
                 edges = binning.ybinList
 
