@@ -3,6 +3,7 @@ from TwoDAlphabet.twoDalphabet import MakeCard, TwoDAlphabet
 from TwoDAlphabet.alphawrap import BinnedDistribution, ParametricFunction
 import os
 import ROOT
+import math
 import json
 
 '''--------------------------Helper functions---------------------------'''
