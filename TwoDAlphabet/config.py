@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import ROOT, json, os, pandas, re, warnings, itertools
+import math
 from numpy import nan
 import pprint
 pp = pprint.PrettyPrinter(indent=4)
@@ -426,6 +427,249 @@ class OrganizedHists():
                 self.CreateSubRegions(h, binning)
 
             infile.Close()
+
+    def AddMCStatShapes(self, df, binnings, threshold=10, include_signal=False, excluded_procs=[], alpha_min=0.1, name_prefix='mcstat', verbose=True):
+        '''
+        Generate autoMCStats-style per-bin shape templates from the rebinned nominal
+        background hists, write them to organized_hists.root, register
+        them in hist_map for BinningLookup(), and return rows to append to the ledger.
+
+        Call after self.Add(binnings). Returns list[dict] (syst_type='shapes').
+        Set verbose=True for a per-bin report in the style of Combine's autoMCStats.
+        '''
+        self.file.Close()
+        self.file = ROOT.TFile.Open(self.filename, 'UPDATE')
+
+        types = ['BKG', 'SIGNAL'] if include_signal else ['BKG'] # normally we don't want to add MC stat unc on signal, but keep it just in case
+        bkg = df[df.process_type.isin(types)]
+        if bkg.empty: # Warn user that MCstats will not be run at all, return
+            print('\n'+'='*100)
+            print('WARNING: All MC background processes excluded from calculation of MC statistical uncertainties.')
+            print(f'\tExcluded processes: {", ".join(excluded_procs)}')
+            print('='*100+'\n')
+            return []
+        existing = self.GetHistNames()
+        new_rows = []
+        hist_map_rows = []
+        n_bblite = n_perproc = n_skipped = 0
+
+        # Loop over all regions in the workspace and get the nominal histograms for all unique processes.
+        # Store them in a {process: TH2} dict called `nominal`.
+        # Avoid any processes specified by the user in the JSON, passed here as `excluded_procs` list.
+        for region in df.region.unique():
+            procs = list(bkg[bkg.region.eq(region) & ~bkg.process.isin(excluded_procs)].process.unique())
+            if not procs:
+                # This occurs when `include_signal=False` and all MC processes are excluded. Just return. 
+                print('\n'+'='*100)
+                print('WARNING: All MC processes excluded from calculation of MC statistical uncertainties.')
+                print(f'\tExcluded processes: {", ".join(excluded_procs + list(df[df.process_type.isin(["SIGNAL"])].process.unique()))}')
+                print('='*100+'\n')
+                return []
+            binning_name = df[df.region.eq(region)].binning.iloc[0]
+            binning = binnings[binning_name]
+
+            nominal = {}
+            for p in procs:
+                hname = '%s_%s_FULL' % (p, region)
+                if hname in existing:
+                    h = self.file.Get(hname); h.SetDirectory(0)
+                    nominal[p] = h
+            if not nominal:
+                continue
+
+            # For verbose output in the style of Combine: load the excluded non-data nominal histos, for the "total sum" line
+            all_nominal = dict(nominal)
+            for p in df[df.region.eq(region) & df.process_type.ne('DATA')].process.unique():
+                if p in all_nominal:
+                    continue
+                hname = '%s_%s_FULL' % (p, region)
+                if hname in existing:
+                    h = self.file.Get(hname); h.SetDirectory(0)
+                    all_nominal[p] = h
+            excluded = [p for p in all_nominal if p not in nominal]
+            meta_data = {p: df[df.process.eq(p) & df.region.eq(region) & df.variation.eq('nominal')].iloc[0] for p in nominal}
+            sample = next(iter(nominal.values()))
+            nx, ny = sample.GetNbinsX(), sample.GetNbinsY()
+
+            if verbose:
+                print('\n' + '=' * 64)
+                print('Analyzing bin errors for region: %s' % region)
+                print('Poisson cut-off: %d' % threshold)
+                print('Processes summed: %s' % ' '.join(nominal.keys()))
+                print('Processes excluded from sums: %s' % (' '.join(excluded) if excluded else '(none)'))
+                print('=' * 64)
+                print('%-12s  %14s  %14s  %s' % ('Bin', 'Contents', 'Error', 'Notes'))
+
+            def _make_mcstat_template(proc, variation, bx, by, rel):
+                '''
+                Produce a 2D histogram for a given process, where only a single bin (bx, by) is different from the nominal.
+                This bin is shifted up and down by some multiplicative factor `rel`, and the down variation is bounded below at zero. 
+                The factor `rel` is determined based on the number of effective events. 
+                '''
+                c = nominal[proc].GetBinContent(bx, by) # Nominal bin contents
+                for direction, factor in (('Up', 1.0 + rel), ('Down', max(0.0, 1.0 - rel))):
+                    h = nominal[proc].Clone('%s_%s_FULL_%s%s' % (proc, region, variation, direction))
+                    h.SetDirectory(0)
+                    h.SetBinContent(bx, by, c * factor)
+                    h.SetTitle(h.GetName())
+                    self.file.WriteTObject(h, h.GetName())
+                    self.CreateSubRegions(h, binning)
+                    # register the "FULL" template so BinningLookup() can resolve it later. This way, 2DA does the RooDataHist creation for us
+                    hist_map_rows.append({
+                        'source_histname': h.GetName(),
+                        'out_histname':    h.GetName(),
+                        'scale':           1.0,
+                        'color':           meta_data[proc].get('color', 0),
+                        'binning':         binning_name,
+                    })
+
+                    row = meta_data[proc].copy()
+                    row['variation'] = variation
+                    row['variation_alias'] = variation
+                    row['direction'] = direction
+                    row['syst_type'] = 'shapes'
+                    row['shapes'] = 1.0
+                    row['lnN'] = nan
+                    row['mcstat'] = True
+                    new_rows.append(row.to_dict())
+
+            # Loop over all bins, and all nominal MC processes in this region. Perform the BB/BB-lite algorithm
+            for bx in range(1, nx + 1):
+                for by in range(1, ny + 1):
+                    tag = f'{region} ({bx}, {by})' #'bx%d_by%d' % (bx, by)
+                    n_tot, e2 = 0.0, 0.0
+                    for p in nominal:
+                        n_tot += nominal[p].GetBinContent(bx, by)
+                        e2    += nominal[p].GetBinError(bx, by) ** 2
+                    e_tot = math.sqrt(e2)
+                    if verbose:
+                        na, e2a = 0.0, 0.0
+                        for p in all_nominal:
+                            na  += all_nominal[p].GetBinContent(bx, by)
+                            e2a += all_nominal[p].GetBinError(bx, by) ** 2
+                        print('-' * 64)
+                        print('%-12s  %14.6f  %14.6f  %s (%s)' % (tag, na, math.sqrt(e2a), 'total sum', ', '.join([p for p in all_nominal])))
+                        print('%-12s  %14.6f  %14.6f  %s (%s)' % (tag, n_tot, e_tot, 'excluding marked processes', ', '.join(excluded)))
+
+                    if e_tot == 0.0:
+                        n_skipped += 1
+                        if verbose:
+                            print('  => Error is zero, ignore')
+                        continue
+
+                    N_eff_tot = int(round(n_tot * n_tot / (e_tot * e_tot)))
+
+                    alpha = n_tot / N_eff_tot if N_eff_tot > 0 else 0.0
+                    if alpha < alpha_min:
+                        print('%-12s  %14.6f  %14.6f  %s' % (
+                              tag, float(N_eff_tot), math.sqrt(N_eff_tot),
+                              'Effective events, alpha=%.6f' % alpha))
+                        print('  => alpha < alpha_min: %.3f < %.3f'%(alpha, alpha_min))
+                        print('  => No MC statistical uncertainty parameters will be calculated')
+                        continue
+                    if verbose:
+                        print('%-12s  %14.6f  %14.6f  %s' % (
+                            tag, float(N_eff_tot), math.sqrt(N_eff_tot),
+                            'Effective events, alpha=%.6f' % alpha))
+
+                    ##################################################################################################
+                    # Case 1: n_tot^eff > threshold
+                    # In this case, we make a single Gaussian-constrained NP that scales the total yield in the bin.
+                    # Since we're doing this with shape templates instead of whatever Combine does, we have to ensure
+                    # that every process in this bin shares the same nuisance parameter name (histogram name), and that 
+                    # every process has the same scaling value `rel`. In Case 1, we use `rel = e_tot / n_tot`
+                    #
+                    # This means that, in a given bin, process `i` contributes n_i * (1 + v*rel) for nuisance value `v`.
+                    # For all processes in this bin, we get:
+                    #   \Sum_i n_i * (1 + v * rel) = (1 + v * rel) * \Sum_i n_i
+                    #                              = (1 + v * e_tot / n_tot) * n_tot
+                    #                              = n_tot + v * e_tot
+                    # 
+                    # Thus, we're left with +/- e_tot at for v = +/-1. 
+                    # Since e_tot = sqrt(\Sum_i e_i^2), we get the combined MC stat uncertainty in this given bin. 
+                    ##################################################################################################
+                    if N_eff_tot > threshold:
+                        variation = '%s_%s_bx%d_by%d' % (name_prefix, region, bx, by)
+                        rel = e_tot / n_tot
+                        if verbose:
+                            print('  => N_eff > %d : shared gaussian shape %r (rel=%.6f) shared by [%s]'
+                                % (threshold, variation, rel, ', '.join(nominal.keys())))
+                        for p in nominal:
+                            _make_mcstat_template(p, variation, bx, by, rel)
+                        n_bblite += 1
+
+                    ##################################################################################################
+                    # Case 2: n_tot^eff < threshold
+                    # In this case, the number of effective events is less than the threshold. Now, we simply make a 
+                    # new TH2 for each process, where every bin is kept the same except for (bx, by) which is shifted
+                    # up and down by +/-1 sigma. 
+                    # Here, we use `rel == width = e_i / n_i`, where "i" represents the process. Thus, in a given bin,
+                    # a process "i" has a yield (governed by the value `v` of the nuisance parameter):
+                    #       yield_i(v) = n_i + v * e_i 
+                    #                  = n_i·(1 + v * width)
+                    #
+                    # Since we are providing Combine the +/-1 sigma variation histograms, it will automatically 
+                    # assign this nuisance parameter a unit-Gaussian prior. 
+                    # NOTE: this is not strictly what Combine does, as Combine will implement a Poisson-constrained 
+                    # parameter. However, there's no good/easy way to do this with the TH2/RooDataHist implementation 
+                    # of 2DAlphabet, and in general a Gaussian is going to be good enough anyway. 
+                    ##################################################################################################
+                    else:
+                        if verbose:
+                            print('  => N_eff <= %d : per-process (Poisson approximated as gaussian)' % threshold)
+                        made_one = False # the below-threshold bin where every process has zero content/error doesn't get counted as a per-process bin
+                        for p in nominal:
+                            c = nominal[p].GetBinContent(bx, by)
+                            e = nominal[p].GetBinError(bx, by)
+                            if verbose:
+                                print('  ' + '-' * 58)
+                                print('    %-18s %14.6f %14.6f' % (p, c, e))
+                            if c <= 0.0 or e <= 0.0:
+                                if verbose:
+                                    print('      => Content or error is zero, ignore')
+                                continue
+                            N_eff_i = int(round(c * c / (e * e)))
+                            width = e / c
+                            variation = '%s_%s_%s_bx%d_by%d' % (name_prefix, region, p, bx, by)
+
+                            alpha_i = c / N_eff_i if N_eff_i > 0 else 0.0
+                            if alpha < alpha_min:
+                                print('%-12s  %14.6f  %14.6f  %s' % (
+                                    tag, float(N_eff_tot), math.sqrt(N_eff_tot),
+                                    'Effective events, alpha=%.6f' % alpha))
+                                print('  => alpha < alpha_min: %.3f < %.3f'%(alpha, alpha_min))
+                                print('  => No MC statistical uncertainty parameters will be calculated')
+                                continue
+                            if verbose:
+                                print('    %-18s %14.6f %14.6f  %s' % (
+                                    '', float(N_eff_i), math.sqrt(N_eff_i),
+                                    'Effective events, alpha=%.6f' % alpha_i))
+                                print('      => %r [1.00,%.2f,%.2f] to be gaussian constrained (width=%.6f)'
+                                    % (variation, max(0.0, 1.0 - 7.0 * width), 1.0 + 7.0 * width, width))
+                            _make_mcstat_template(p, variation, bx, by, width)
+                            made_one = True
+                        if made_one:
+                            n_perproc += 1
+
+        if hist_map_rows:
+            self.hist_map['__mcstat__'] = pandas.concat(
+                [self.hist_map.get('__mcstat__'), pandas.DataFrame(hist_map_rows)],
+                ignore_index=True) if '__mcstat__' in self.hist_map else pandas.DataFrame(hist_map_rows)
+            hist_map_rows = []
+
+        if verbose:
+            n_nuis = len({r['variation'] for r in new_rows})
+            print('\n' + '=' * 64)
+            print('MC-stat shape summary')
+            print('  BB-lite bins        : %d' % n_bblite)
+            print('  per-process bins    : %d' % n_perproc)
+            print('  skipped (zero error): %d' % n_skipped)
+            print('  distinct nuisances  : %d  (%d shape templates)' % (n_nuis, len(new_rows)))
+            print('=' * 64 + '\n')
+
+        self.file.Close()
+        self.file = ROOT.TFile.Open(self.filename, 'OPEN')
+        return new_rows
 
     def Get(self,histname='',process='',region='',systematic='',subspace='FULL'):
         '''Get histogram from the opened TFile. Specify the histogram

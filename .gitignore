@@ -9,3 +9,5 @@ cov.xml
 tests_unfinished
 .vscode/
 docs/
+test/CR_cicd/
+test/limits_cicd.json

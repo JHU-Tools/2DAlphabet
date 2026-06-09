@@ -36,13 +36,11 @@ class TwoDAlphabet:
         optdict = config._section('OPTIONS')
         optdict.update(externalOpts)
         self.options = self.LoadOptions(optdict)
-        print("Mark", self.options)
+        print("Running with options:", self.options)
         self.df = config.FullTable()
         self.subtagTracker = {}
         self.iterWorkspaceObjs = config.iterWorkspaceObjs
         self._binningMap = {r:config._section('REGIONS')[r]['BINNING'] for r in config._section('REGIONS').keys()}
-                    
-            
         self.ledger = Ledger(self.df)
 
         if not loadPrevious:
@@ -54,11 +52,22 @@ class TwoDAlphabet:
             self.binnings = {}
             for kbinning in config._section('BINNING').keys():
                 self.binnings[kbinning] = Binning(kbinning, config._section('BINNING')[kbinning], template)
-                print(self.binnings[kbinning].xbinByCat)
             self.organizedHists = OrganizedHists(
                 self.tag+'/', self.binnings,
                 self.GetHistMap(), readOnly=False
             )
+            # Handle MC statistical uncertainties. The threshold and include_signal options are controlled in the JSON. 
+            if self.options.mcstats:
+                mcstat_rows = self.organizedHists.AddMCStatShapes(
+                    self.df, self.binnings,
+                    threshold      = self.options.mcstats_threshold,            # Effective events threshold below which to implement per-process nuisances (default 10)
+                    include_signal = self.options.mcstats_include_signal,       # Whether to implement MC stats nuisances for signal. Defaults False, since this isn't usually done.
+                    excluded_procs = self.options.mcstats_exclude_processes,    # Processes for which MC statistical uncertainty should not be calculated. 
+                    alpha_min      = self.options.mcstats_alpha_min             # Threshold for alpha below which MC statistical uncertainty histograms are not generated.
+                )
+                if mcstat_rows:
+                    self.df = pandas.concat([self.df, pandas.DataFrame(mcstat_rows)], ignore_index=True)
+                    self.ledger = Ledger(self.df)      # rebuild so MakeCard sees the new shape systs
             self.workspace = self._makeWorkspace()
 
         else:
@@ -121,6 +130,17 @@ class TwoDAlphabet:
             help='List of regions in which to blind plots of x-axis SIG. Does not blind fit.')
         parser.add_argument('blindedFit', default=[], type=str, nargs='*',
             help='List of regions in which to blind fit of x-axis SIG. Does not blind plots.')
+        # Automatic MC statistical uncertainties
+        parser.add_argument('mcstats', default=True, type=bool, nargs='?',
+            help='Enable Combine autoMCStats for template (histogram) processes. Defaults to True.')
+        parser.add_argument('mcstats_threshold', default=10, type=int, nargs='?',
+            help='N_eff threshold above which a bin uses BB-lite. Default is 10 effective events.')
+        parser.add_argument('mcstats_alpha_min', default=0.1, type=float, nargs='?',
+            help='Threshold alpha_min below which MC statistical uncertainty variation histograms for processes that have negligible impact are not created. Defaults to 0.1.')
+        parser.add_argument('mcstats_include_signal', default=False, type=bool, nargs='?',
+            help='Whether to include signal in calculation of MC statistical uncertainties. Defaults to False.')
+        parser.add_argument('mcstats_exclude_processes', default=[], type=str, nargs='*',
+            help='List of processes for which MC statistical uncertainty templates should not be produced. NOTE: they will still be used in the calculation of the MC statistical uncertainty for other processes.')
         # Plotting
         parser.add_argument('haddSignals', default=True, type=bool, nargs='?',
             help='Combine signals into one histogram for the sake of plotting. Still treated as separate in fit. Defaults to True.')
@@ -306,7 +326,7 @@ class TwoDAlphabet:
 
             print ('Making RooDataHist... %s'%hname)
             rdh = make_RDH(self.organizedHists.Get(hname), var_lists[binningName][cat])
-            getattr(workspace,'import')(rdh)
+            getattr(workspace,'import')(rdh, ROOT.RooFit.Silence())
 
         return workspace
 

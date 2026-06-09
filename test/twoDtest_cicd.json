@@ -24,6 +24,7 @@
             "SCALE": 1.0,
             "COLOR": "red",
             "TYPE": "BKG",
+            "TITLE": "t#bar{t}_{16}",
             "LOC": "path/FILE:HIST"
         },
         "TprimeB-1800_16": {
@@ -31,13 +32,14 @@
             "SCALE": 1.0,
             "COLOR": "violet",
             "TYPE": "SIGNAL",
+            "TITLE": "TprimeB-1800_{16}",
             "LOC": "path/FILE:HIST"
         }
     },
 
     "REGIONS": {
         "CR_pass": {
-            "PROCESSES": ["TprimeB-1800_16"],
+            "PROCESSES": ["ttbar_16", "TprimeB-1800_16"],
             "BINNING": "default"
         },
         "CR_fail": {
@@ -89,6 +91,11 @@
         }
     },
     "OPTIONS": {
+        "mcstats": true,
+        "mcstats_threshold": 10, 
+        "mcstats_include_signal": false,
+        "mcstats_alpha_min": 0.1,
+        "mcstats_exclude_processes": [],
         "blindedPlots": [],
         "blindedFit": [],
         "haddSignals": true,
