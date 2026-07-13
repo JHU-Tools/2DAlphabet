@@ -1,15 +1,21 @@
-import ROOT, array
+import ROOT, array, itertools
 from math import sqrt
 
 class Binning:
-    '''Class to handle information on and manipulations of binning schemes.'''
+    '''Class to handle information on and manipulations of binning schemes.
+    This class now optionally supports a third (Z) axis. If the BINNING
+    section of the config contains a "Z" sub-section, the object uses
+    3D mode (self.is3D == True) and builds TH3F histograms and a third
+    RooRealVar. If there is no "Z" section, everything should behave exactly as
+    the original 2D implementation.
+    '''
     def __init__(self, name, binning_dict, start_template):
         '''Initialize Binning object.
 
         Args:
             name (str): Name to create unique objects owned by Binning.
-            binning_dict (dict): "BINNING" section of configuration json which specifies the X and Y binning schemes.
-            start_template (TH2): Histogram to compare against when doing sanity checks.
+            binning_dict (dict): "BINNING" section of configuration json which specifies the X, Y (and optionally Z) binning schemes.
+            start_template (TH2 or TH3): Histogram to compare against when doing sanity checks.
         '''
         self.name = name
         if 'SIGSTART' in binning_dict['X'] and 'SIGEND' in binning_dict['X']:
@@ -18,44 +24,61 @@ class Binning:
             self.boundaries = binning_dict["X"]["BOUNDARIES"]
         else:
             self.boundaries = []
-            
+
         self.xtitle = binning_dict['X']['TITLE']
         self.ytitle = binning_dict['Y']['TITLE']
-        self.xbinByCat, self.ybinList = parse_binning_info(binning_dict, self.boundaries)
+        self.is3D = 'Z' in binning_dict
+        self.ztitle = binning_dict['Z']['TITLE'] if self.is3D else ''
+
+        # parse_binning_info now returns a third element (None in 2D mode).
+        self.xbinByCat, self.ybinList, self.zbinList = parse_binning_info(binning_dict, self.boundaries)
         self.ySlices,self.ySliceIdx = self._getYslices(binning_dict)
-        self.xSlices,self.xSliceIdx = self._getXslices(binning_dict) 
+        self.xSlices,self.xSliceIdx = self._getXslices(binning_dict)
+        self.zSlices,self.zSliceIdx = self._getZslices(binning_dict) if self.is3D else (None, None) 
         self._checkBinning('X',start_template)
         self._checkBinning('Y',start_template)
-        self.xVars, self.yVar = self.CreateRRVs(binning_dict['X'], binning_dict['Y']) 
-        print(f"X Binning of {self.name}: ", self.xbinList)
-    def CreateRRVs(self,xdict,ydict):
-        '''Create the RooRealVars representing the X and Y axes.
-        For the X axis, three RooRealVars are returned in a dictionary with
-        each key mapping the RooRealVar to either LOW, SIG, or HIGH categories.
+        if self.is3D:
+            self._checkBinning('Z',start_template)  # [3D]
+        # CreateRRVs now also returns the Z RooRealVar (None in 2D mode).
+        self.xVars, self.yVar, self.zVar = self.CreateRRVs(
+            binning_dict['X'], binning_dict['Y'],
+            binning_dict['Z'] if self.is3D else None
+        )
+
+    def CreateRRVs(self,xdict,ydict,zdict=None):
+        '''Create the RooRealVars representing the X, Y (and optionally Z) axes.
+        For the X axis, one RooRealVar per category (LOW, SIG, HIGH...) is returned
+        in a dictionary keyed by category name.
 
         Args:
             xdict (dict): "X" subsection of the "BINNING" section of the config.
             ydict (dict): "Y" subsection of the "BINNING" section of the config.
+            zdict (dict, optional): "Z" subsection of the config. Defaults to None (2D mode).
 
         Returns:
-            tuple: (0) dict of X axis RooRealVars and (1) Y axis RooRealVar.
+            tuple: (0) dict of X axis RooRealVars, (1) Y axis RooRealVar, (2) Z axis RooRealVar or None.
         '''
         yRRV = create_RRV_base(ydict['NAME']+'_'+self.name,
                           ydict['TITLE'],
                           self.ybinList)
+        zRRV = None
+        if zdict is not None:  # [3D]
+            zRRV = create_RRV_base(zdict['NAME']+'_'+self.name,
+                              zdict['TITLE'],
+                              self.zbinList)
         xRRVs = {}
         for c in self.xbinByCat:
             xRRVs[c] = create_RRV_base(xdict['NAME']+'_'+c+'_'+self.name,
                                   xdict['TITLE'],
                                   self.xbinByCat[c])
-        return xRRVs,yRRV
+        return xRRVs,yRRV,zRRV
 
     def _checkBinning(self,axis,start_template):
         '''Perform sanity check that new binning scheme is a subset of the
         starting input space.
 
         Args:
-            axis (str): Either "X" or "Y".
+            axis (str): "X", "Y", or "Z".
 
         Raises:
             ValueError: If requested binning is not a subset of the input space.
@@ -64,8 +87,9 @@ class Binning:
         input_min = getattr(start_template,'Get%saxis'%axis)().GetXmin()
         input_max = getattr(start_template,'Get%saxis'%axis)().GetXmax()
 
-        if axis == 'X': new_bins = self.xbinList
-        else: new_bins = self.ybinList
+        if axis == 'X':   new_bins = self.xbinList
+        elif axis == 'Y': new_bins = self.ybinList
+        else:             new_bins = self.zbinList
 
         if (new_bins[0] < input_min) or (new_bins[-1] > input_max):
             raise ValueError('%s axis requested is larger than input\n\tInput: [%s,%s]\n\tRequested: [%s,%s]'%(axis,input_min,input_max,new_bins[0],new_bins[-1]))
@@ -125,7 +149,26 @@ class Binning:
         slices = [int(self.xbinList[i]) for i in idxs]
 
         return slices, idxs
-    
+
+    def _getZslices(self,binning_dict):  # copy of _getYslices
+        if 'SLICES' in binning_dict['Z']:
+            if len(binning_dict['Z']['SLICES']) != 4:
+                raise RuntimeError('Must define Z SLICES as a list of four values which represent the edges of the continuous slices.')
+            elif binning_dict['Z']['SLICES'][0] != self.zbinList[0]:
+                raise ValueError('First edge of Z SLICES does not match axis (%s vs %s)'%(binning_dict['Z']['SLICES'][0], self.zbinList[0]))
+            elif binning_dict['Z']['SLICES'][-1] != self.zbinList[-1]:
+                raise ValueError('Last edges of Z SLICES does not match axis (%s vs %s)'%(binning_dict['Z']['SLICES'][-1], self.zbinList[-1]))
+            slices = binning_dict['Z']['SLICES']
+            idxs = [0, self.zbinList.index(slices[1]), self.zbinList.index(slices[2]), len(self.zbinList)-1]
+        else:
+            slices, idxs = self._autoZslices()
+        return slices, idxs
+
+    def _autoZslices(self):
+        nbins = len(self.zbinList)-1
+        idxs = [0, int(nbins/4), int(nbins/4)+int(nbins/3), nbins]
+        slices = [int(self.zbinList[i]) for i in idxs]
+        return slices, idxs
 
     def GlobalXbinIdx(self,xbin,c):
         '''Evaluate for the bin - a bit tricky since it was built with separate categories.
@@ -144,10 +187,10 @@ class Binning:
     def xcatFromGlobal(self,xbin):
         bin_total_len = 0
         for c in self.xbinByCat:
-            bin_len = self.xbinByCat[c] 
+            bin_len = self.xbinByCat[c]
             if bin_total_len <= xbin  and xbin < (bin_total_len +  bin_len):
                 return xbin - bin_total_len, c
-            bin_total_len += (bin_len - 1) 
+            bin_total_len += (bin_len - 1)
 
     @property
     def xbinList(self):
@@ -168,12 +211,24 @@ class Binning:
     def GetBinCenterY(self,ibin):
         return self.GetBinCenterBase(ibin,self.ybinList)
 
+    def GetBinCenterZ(self,ibin):
+        return self.GetBinCenterBase(ibin,self.zbinList)
+
     def CreateHist(self,name,cat=''):
         if cat != '':
             xbins = self.xbinByCat[cat]
         else:
             xbins = self.xbinList
 
+        if self.is3D:
+            return ROOT.TH3F(name,name,
+                            len(xbins)-1,
+                            array.array('d',xbins),
+                            len(self.ybinList)-1,
+                            array.array('d',self.ybinList),
+                            len(self.zbinList)-1,
+                            array.array('d',self.zbinList)
+            )
         return ROOT.TH2F(name,name,
                         len(xbins)-1,
                         array.array('d',xbins),
@@ -198,7 +253,6 @@ def create_RRV_base(name,title,bins):
     RRV.setBinning(RooBinning)
     return RRV
 
-#def parse_binning_info(binDict):
 def parse_binning_info(binDict, boundaries):
     '''If running a blinded fit, then we want to do a combined fit over 
     two categories: below and above the signal region. This requires
@@ -229,28 +283,24 @@ def parse_binning_info(binDict, boundaries):
     Returns:
         tuple: In order - new bins in the X axis, new bins in the Y axis
     '''
-    for v in ['X','Y']:
+    newZbins = None
+    axes = ['X','Y','Z'] if 'Z' in binDict else ['X','Y']
+    for v in axes:
         axis = binDict[v]
         new_bins = parse_axis_info(axis)
-            
+
         if v == 'X':
             newXbins = binlist_to_bindict(new_bins,boundaries)
-        elif v == 'Y': newYbins = new_bins
+        elif v == 'Y':
+            newYbins = new_bins
+        elif v == 'Z':
+            newZbins = new_bins 
 
-    return newXbins,newYbins
-    
+    return newXbins,newYbins,newZbins
+
 def parse_axis_info(axisDict):
     '''Return list of bin edges based off of the scheme specified in the "BINNING"
     section of the json config.
-
-    Args:
-        axisDict (dict): config["BINNING"]["X" or "Y"]
-
-    Raises:
-        RuntimeError: If binning scheme not specified with the correct syntax.
-
-    Returns:
-        list: Bin edges.
     '''
     if 'BINS' in axisDict.keys():
         new_bins = axisDict['BINS']
@@ -261,7 +311,6 @@ def parse_axis_info(axisDict):
         raise RuntimeError('Bins not specified correctly in BINNING section of config.')
     return new_bins
 
-#def binlist_to_bindict(binList):
 def binlist_to_bindict(binList, boundaries):
     '''Convert a list of bins into a dictionary with keys LOW, SIG, and HIGH
     where the three regions are separated by the values sigLow and sigHigh.
@@ -289,11 +338,11 @@ def binlist_to_bindict(binList, boundaries):
         for b in binList:
             if b >= bin_start and b <= boundaries[i]:
                 return_bins[f"Region{i}"].append(b)
-        bin_start = boundaries[i]  
+        bin_start = boundaries[i]
     for b in binList:
         if b >= bin_start:
             return_bins[f"Region{len(boundaries)}"].append(b)
-    return return_bins 
+    return return_bins
 
 def concat_bin_dicts(binDict):
     '''Convert a dictionary of shape {'LOW':[...],'SIG':[...],'HIGH':[...]}
@@ -361,50 +410,45 @@ def histlist_to_binlist(XYZ,histList):
     return concat_bin_lists(binList)
 
 def stitch_hists_in_x(name,binning,histList,blinded=[]):
-    '''Required that histList be in order of desired stitching
-    `blinded` is a list of the index of regions you wish to skip/blind.
-
-    Args:
-        name (str): Name of output histogram.
-        binning (Binning): Binning storage object.
-        histList (list(TH2)): List of histograms to stitch together. Binning must be continious.
-        blinded (list(int), optional): List of indexes of histList which should be dropped/blinded. Defaults to [].
-
-    Raises:
-        ValueError: If X axis bins stitched together from histList are not the same as the input template.
-
-    Returns:
-        TH2: Output stitched histograms.
-    '''
+    '''Stitch a list of histograms together along X. Now works for TH2 and TH3'''
     stitched_hist = binning.CreateHist(name)
     stitched_hist.Reset()
     # Sanity checks
     histListBins = histlist_to_binlist("X",histList)
     if histListBins != get_bins_from_hist("X",stitched_hist):
         raise ValueError('X axis bins stitched together from histList are not the same as the input template.\n%s vs %s'%(histListBins,get_bins_from_hist("X",stitched_hist)))
+    is3D = stitched_hist.GetDimension() == 3  # [3D]
     # Stitch
     bin_jump = 0
     for i,h in enumerate(histList):
         if i in blinded:
             bin_jump += histList[i].GetNbinsX()
             continue
-        
-        for ybin in range(1,h.GetNbinsY()+1):
-            for xbin in range(1,h.GetNbinsX()+1):
-                stitched_xindex = xbin + bin_jump
-                stitched_hist.SetBinContent(stitched_xindex,ybin,h.GetBinContent(xbin,ybin))
-                stitched_hist.SetBinError(stitched_xindex,ybin,h.GetBinError(xbin,ybin))
+
+        if is3D:
+            for zbin in range(1,h.GetNbinsZ()+1):
+                for ybin in range(1,h.GetNbinsY()+1):
+                    for xbin in range(1,h.GetNbinsX()+1):
+                        stitched_xindex = xbin + bin_jump
+                        stitched_hist.SetBinContent(stitched_xindex,ybin,zbin,h.GetBinContent(xbin,ybin,zbin))
+                        stitched_hist.SetBinError(stitched_xindex,ybin,zbin,h.GetBinError(xbin,ybin,zbin))
+        else:
+            for ybin in range(1,h.GetNbinsY()+1):
+                for xbin in range(1,h.GetNbinsX()+1):
+                    stitched_xindex = xbin + bin_jump
+                    stitched_hist.SetBinContent(stitched_xindex,ybin,h.GetBinContent(xbin,ybin))
+                    stitched_hist.SetBinError(stitched_xindex,ybin,h.GetBinError(xbin,ybin))
 
         bin_jump += histList[i].GetNbinsX()
 
     return stitched_hist
 
 def make_blinded_hist(h,sigregion):
-    '''Clone histogram (h) and set the bins in range
-    sigregion[0] to sigregion[1] on the X axis to zero.
+    '''Clone histogram (h) and set the bins in the X range sigregion[0]..sigregion[1]
+    to zero, across all Y (and Z) bins. Now works for TH2 and TH3.
 
     Args:
-        h (TH2): Input unblinded histogram
+        h (TH2 or TH3): Input unblinded histogram
         sigregion (list(float)): Axis range to blind.
         Edges must line up with h's bin edges. Must have length of 2 (lower and upper bound).
 
@@ -413,7 +457,7 @@ def make_blinded_hist(h,sigregion):
         IndexError: If sigregion is not of length 2.
 
     Returns:
-        TH2: Modified version of h with specified region blinded.
+        TH2 or TH3: Modified version of h with specified region blinded.
     '''
     blindedHist = h.Clone()
     blindedHist.Reset(); blindedHist.Sumw2()
@@ -424,16 +468,39 @@ def make_blinded_hist(h,sigregion):
     if len(sigregion) != 2:
         raise IndexError('Signal region must be specified by list of length 2.')
 
-    for binY in range(1,h.GetNbinsY()+1):
-        for binX in range(1,h.GetNbinsX()+1):
-            if h.GetXaxis().GetBinUpEdge(binX) <= sigregion[0] or h.GetXaxis().GetBinLowEdge(binX) >= sigregion[1]:
-                if h.GetBinContent(binX,binY) > 0:
-                    blindedHist.SetBinContent(binX,binY,h.GetBinContent(binX,binY))
-                    blindedHist.SetBinError(binX,binY,h.GetBinError(binX,binY))
+    is3D = h.GetDimension() == 3 
+    if is3D:
+        for binZ in range(1,h.GetNbinsZ()+1):
+            for binY in range(1,h.GetNbinsY()+1):
+                for binX in range(1,h.GetNbinsX()+1):
+                    if h.GetXaxis().GetBinUpEdge(binX) <= sigregion[0] or h.GetXaxis().GetBinLowEdge(binX) >= sigregion[1]:
+                        if h.GetBinContent(binX,binY,binZ) > 0:
+                            blindedHist.SetBinContent(binX,binY,binZ,h.GetBinContent(binX,binY,binZ))
+                            blindedHist.SetBinError(binX,binY,binZ,h.GetBinError(binX,binY,binZ))
+    else:
+        for binY in range(1,h.GetNbinsY()+1):
+            for binX in range(1,h.GetNbinsX()+1):
+                if h.GetXaxis().GetBinUpEdge(binX) <= sigregion[0] or h.GetXaxis().GetBinLowEdge(binX) >= sigregion[1]:
+                    if h.GetBinContent(binX,binY) > 0:
+                        blindedHist.SetBinContent(binX,binY,h.GetBinContent(binX,binY))
+                        blindedHist.SetBinError(binX,binY,h.GetBinError(binX,binY))
 
     return blindedHist
 
-def copy_hist_with_new_bins(copyName,XorY,inHist,new_bins):
+def copy_hist_with_new_bins(copyName,axis_to_rebin,inHist,new_bins):
+    '''Make a copy of a histogram with new bins along one axis. For 2D, behavior is
+    identical to the original (axis_to_rebin must be "X" or "Y"). For 3D,
+    axis_to_rebin may also be "Z" and the other two axes are held fixed.
+    '''
+    dim = inHist.GetDimension()
+    if dim == 2:
+        return _copy_hist_with_new_bins_2D(copyName,axis_to_rebin,inHist,new_bins)
+    elif dim == 3:
+        return _copy_hist_with_new_bins_3D(copyName,axis_to_rebin,inHist,new_bins)  # [3D]
+    else:
+        raise ValueError('copy_hist_with_new_bins only supports 2D or 3D histograms (got dim=%s).'%dim)
+
+def _copy_hist_with_new_bins_2D(copyName,XorY,inHist,new_bins):
     '''Make a copy of a 2D histogram with new bins specified for a given axis (X or Y).
     New bins must be larger than the old bins and the edges of new bins must line up with 
     existing edges (no finer binning and no splitting bins).
@@ -456,14 +523,12 @@ def copy_hist_with_new_bins(copyName,XorY,inHist,new_bins):
         raise ValueError('Arg XorY is not "X" or "Y".')
     axis_to_rebin = XorY
     axis_to_hold = "X" if XorY=="Y" else "Y"
-    
+
     static_array = array.array('f',get_bins_from_hist(axis_to_hold,inHist))
     static_nbins = len(static_array)-1
     rebin_array = array.array('f',new_bins)
-    rebin_nbins = len(rebin_array)-1 
+    rebin_nbins = len(rebin_array)-1
 
-    # Use copyName with _temp to avoid overwriting if inHist has the same name
-    # We can do this at the end but not before we're finished with inHist
     if XorY == "X":
         hist_copy = ROOT.TH2F(copyName+'_temp',copyName+'_temp',rebin_nbins,rebin_array,static_nbins,static_array)
     else:
@@ -474,16 +539,13 @@ def copy_hist_with_new_bins(copyName,XorY,inHist,new_bins):
     old_axis = getattr(inHist,'Get%saxis'%axis_to_rebin)()
     rebin_axis = getattr(hist_copy,'Get%saxis'%axis_to_rebin)()
 
-    # Loop through the old bins
     for static_bin in range(1,static_nbins+1):
-        # print 'Bin y: ' + str(binY)
         for rebin in range(1,rebin_nbins+1):
             new_bin_content = 0
             new_bin_errorsq = 0
             new_bin_min = rebin_axis.GetBinLowEdge(rebin)
             new_bin_max = rebin_axis.GetBinUpEdge(rebin)
 
-            # print '\t New bin x: ' + str(newBinX) + ', ' + str(newBinXlow) + ', ' + str(newBinXhigh)
             for old_bin in range(1,old_axis.GetNbins()+1):
                 old_bin_min = old_axis.GetBinLowEdge(old_bin)
                 old_bin_max = old_axis.GetBinUpEdge(old_bin)
@@ -506,7 +568,6 @@ def copy_hist_with_new_bins(copyName,XorY,inHist,new_bins):
                         '''The requested %s rebinning does not align bin edges with the input bin edge.
                         Cannot split input bin [%s,%s] with output bin [%s,%s]'''%(axis_to_rebin,old_bin_min,old_bin_max,new_bin_min,new_bin_max))
 
-            # print '\t Setting content ' + str(newBinContent) + '+/-' + str(sqrt(newBinErrorSq))
             if new_bin_content > 0:
                 if axis_to_rebin == "X":
                     hist_copy.SetBinContent(rebin,static_bin,new_bin_content)
@@ -515,7 +576,73 @@ def copy_hist_with_new_bins(copyName,XorY,inHist,new_bins):
                     hist_copy.SetBinContent(static_bin,rebin,new_bin_content)
                     hist_copy.SetBinError(static_bin,rebin,sqrt(new_bin_errorsq))
 
-    # Will now set the copyName which will overwrite inHist if it has the same name
+    hist_copy.SetName(copyName)
+    hist_copy.SetTitle(copyName)
+    return hist_copy
+
+def _copy_hist_with_new_bins_3D(copyName,axis_to_rebin,inHist,new_bins): 
+    '''Rebin a single axis of a TH3 while holding the other two axes fixed.'''
+    if axis_to_rebin not in ["X","Y","Z"]:
+        raise ValueError('Arg axis_to_rebin is not "X", "Y", or "Z".')
+    all_axes = ["X","Y","Z"]
+    held = [a for a in all_axes if a != axis_to_rebin]
+
+    rebin_array = array.array('d',new_bins)
+    rebin_nbins = len(rebin_array)-1
+    held_arrays = {ax: array.array('d',get_bins_from_hist(ax,inHist)) for ax in held}
+    held_nbins  = {ax: len(held_arrays[ax])-1 for ax in held}
+
+    nbins = {axis_to_rebin: rebin_nbins}
+    edges = {axis_to_rebin: rebin_array}
+    for ax in held:
+        nbins[ax] = held_nbins[ax]
+        edges[ax] = held_arrays[ax]
+
+    hist_copy = ROOT.TH3F(copyName+'_temp',copyName+'_temp',
+                          nbins["X"], edges["X"],
+                          nbins["Y"], edges["Y"],
+                          nbins["Z"], edges["Z"])
+    hist_copy.Sumw2()
+    hist_copy.GetXaxis().SetName(inHist.GetXaxis().GetName())
+    hist_copy.GetYaxis().SetName(inHist.GetYaxis().GetName())
+    hist_copy.GetZaxis().SetName(inHist.GetZaxis().GetName())
+
+    old_axis = getattr(inHist,'Get%saxis'%axis_to_rebin)()
+    rebin_axis = getattr(hist_copy,'Get%saxis'%axis_to_rebin)()
+
+    h1, h2 = held[0], held[1]
+    for s1 in range(1,held_nbins[h1]+1):
+        for s2 in range(1,held_nbins[h2]+1):
+            for rebin in range(1,rebin_nbins+1):
+                new_bin_content = 0
+                new_bin_errorsq = 0
+                new_bin_min = rebin_axis.GetBinLowEdge(rebin)
+                new_bin_max = rebin_axis.GetBinUpEdge(rebin)
+
+                for old_bin in range(1,old_axis.GetNbins()+1):
+                    old_bin_min = old_axis.GetBinLowEdge(old_bin)
+                    old_bin_max = old_axis.GetBinUpEdge(old_bin)
+                    if old_bin_min >= new_bin_max:
+                        break
+                    elif old_bin_min >= new_bin_min and old_bin_min < new_bin_max:
+                        if old_bin_max <= new_bin_max:
+                            idx = {axis_to_rebin: old_bin, h1: s1, h2: s2}
+                            new_bin_content += inHist.GetBinContent(idx["X"],idx["Y"],idx["Z"])
+                            new_bin_errorsq += inHist.GetBinError(idx["X"],idx["Y"],idx["Z"])**2
+                        elif old_bin_max > new_bin_max:
+                            raise ValueError(
+                                '''The requested %s rebinning does not align bin edges with the input bin edge.
+                                Cannot split input bin [%s,%s] with output bin [%s,%s]'''%(axis_to_rebin,old_bin_min,old_bin_max,new_bin_min,new_bin_max))
+                    elif old_bin_min <= new_bin_min and old_bin_max > new_bin_min:
+                        raise ValueError(
+                            '''The requested %s rebinning does not align bin edges with the input bin edge.
+                            Cannot split input bin [%s,%s] with output bin [%s,%s]'''%(axis_to_rebin,old_bin_min,old_bin_max,new_bin_min,new_bin_max))
+
+                if new_bin_content > 0:
+                    idx = {axis_to_rebin: rebin, h1: s1, h2: s2}
+                    hist_copy.SetBinContent(idx["X"],idx["Y"],idx["Z"],new_bin_content)
+                    hist_copy.SetBinError(idx["X"],idx["Y"],idx["Z"],sqrt(new_bin_errorsq))
+
     hist_copy.SetName(copyName)
     hist_copy.SetTitle(copyName)
     return hist_copy
@@ -572,7 +699,7 @@ def convert_to_events_per_unit(hist,width=None):
             new_error = factor * converted.GetBinError(ibin)
             converted.SetBinContent(ibin,new_content)
             converted.SetBinError(ibin,new_error)
-    
+
     return converted
 
 def zero_negative_bins(name,inhist):
@@ -580,17 +707,25 @@ def zero_negative_bins(name,inhist):
 
     Args:
         name (str): Name of returned histogram.
-        inhist (TH2): Input histogram.
+        inhist (TH2/TH3): Input histogram.
 
     Returns:
-        TH2: Clone of input histogram with negative bins set to zero.
+        TH2/TH3: Clone of input histogram with negative bins set to zero.
     '''
     outhist = inhist.Clone(name)
-    for ix in range(1,inhist.GetNbinsX()+1):
-        for iy in range(1,inhist.GetNbinsY()+1):
-            if inhist.GetBinContent(ix,iy) < 0:
-                outhist.SetBinContent(ix,iy,0)
-                outhist.SetBinError(ix,iy,0)
+    if inhist.GetDimension() == 3:
+        for ix in range(1,inhist.GetNbinsX()+1):
+            for iy in range(1,inhist.GetNbinsY()+1):
+                for iz in range(1,inhist.GetNbinsZ()+1):
+                    if inhist.GetBinContent(ix,iy,iz) < 0:
+                        outhist.SetBinContent(ix,iy,iz,0)
+                        outhist.SetBinError(ix,iy,iz,0)
+    else:
+        for ix in range(1,inhist.GetNbinsX()+1):
+            for iy in range(1,inhist.GetNbinsY()+1):
+                if inhist.GetBinContent(ix,iy) < 0:
+                    outhist.SetBinContent(ix,iy,0)
+                    outhist.SetBinError(ix,iy,0)
 
     return outhist
 
@@ -615,10 +750,10 @@ def remap_binlist(binList,new_min=0.0,new_max=1.0):
     return new_vals
 
 def remap_hist_axis(hist,new_min=0,new_max=1):
-    '''Remap axes of a 2D histogram to [new_min, new_max].
+    '''Remap axes of a 2D/3D histogram to [new_min, new_max].
 
     Args:
-        hist (TH2): Histogram to remap.
+        hist (TH2/TH3): Histogram to remap.
         new_min (int, optional): New minimum. Defaults to 0.
         new_max (int, optional): New maximum. Defaults to 1.
 
@@ -628,20 +763,24 @@ def remap_hist_axis(hist,new_min=0,new_max=1):
     Returns:
         TH1: [description]
     '''
-    ybins = array.array('d', remap_binlist(
-                                get_bins_from_hist('Y',hist),
-                                new_min, new_max
-                             )
-                        )
-    xbins = array.array('d', remap_binlist(
-                                get_bins_from_hist('X',hist),
-                                new_min, new_max
-                             )
-                        )
+    is3D = hist.GetDimension() == 3 
+    ybins = array.array('d', remap_binlist(get_bins_from_hist('Y',hist), new_min, new_max))
+    xbins = array.array('d', remap_binlist(get_bins_from_hist('X',hist), new_min, new_max))
+
+    if is3D: 
+        zbins = array.array('d', remap_binlist(get_bins_from_hist('Z',hist), new_min, new_max))
+        remap = ROOT.TH3F(hist.GetName()+'_unit',hist.GetName()+'_unit',
+                          len(xbins)-1,xbins,len(ybins)-1,ybins,len(zbins)-1,zbins)
+        remap.Sumw2()
+        for xbin in range(1,hist.GetNbinsX()+1):
+            for ybin in range(1,hist.GetNbinsY()+1):
+                for zbin in range(1,hist.GetNbinsZ()+1):
+                    remap.SetBinContent(xbin,ybin,zbin,hist.GetBinContent(xbin,ybin,zbin))
+                    remap.SetBinError(xbin,ybin,zbin,hist.GetBinError(xbin,ybin,zbin))
+        return remap
 
     remap = ROOT.TH2F(hist.GetName()+'_unit',hist.GetName()+'_unit',len(xbins)-1,xbins,len(ybins)-1,ybins)
     remap.Sumw2()
-
     for xbin in range(1,hist.GetNbinsX()+1):
         for ybin in range(1,hist.GetNbinsY()+1):
             remap.SetBinContent(xbin,ybin,hist.GetBinContent(xbin,ybin))
