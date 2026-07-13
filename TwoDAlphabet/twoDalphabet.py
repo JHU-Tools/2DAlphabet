@@ -311,9 +311,15 @@ class TwoDAlphabet:
     def _makeWorkspace(self):
         var_lists = {}
         for binningName in self.binnings.keys():
-            var_lists[binningName] = {
-                c:ROOT.RooArgList(self.binnings[binningName].xVars[c], self.binnings[binningName].yVar) for c in self.binnings[binningName].xbinByCat
-            }
+            _b = self.binnings[binningName]
+            if getattr(_b, 'is3D', False):
+                var_lists[binningName] = {
+                    c: ROOT.RooArgList(_b.xVars[c], _b.yVar, _b.zVar) for c in _b.xbinByCat
+                }
+            else:
+                var_lists[binningName] = {
+                    c: ROOT.RooArgList(_b.xVars[c], _b.yVar) for c in _b.xbinByCat
+                }
 
         print ("Making workspace...")
         workspace = ROOT.RooWorkspace("w")

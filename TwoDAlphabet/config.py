@@ -409,6 +409,8 @@ class OrganizedHists():
                 h.Scale(row.scale)
                 binning = binnings[row.binning]
 
+                if binning.is3D and get_bins_from_hist("Z", h) != binning.zbinList:
+                    h = copy_hist_with_new_bins(row.out_histname+'_rebinZ','Z',h,binning.zbinList)
                 if get_bins_from_hist("Y", h) != binning.ybinList:
                     h = copy_hist_with_new_bins(row.out_histname+'_rebinY','Y',h,binning.ybinList)
                 if get_bins_from_hist("X", h) != binning.xbinList:
@@ -722,8 +724,11 @@ class OrganizedHists():
             hsub.SetTitle(hsub.GetName())
             if hsub.Integral() <= 0:
                 print ('WARNING: %s has zero or negative events - %s'%(hsub.GetName(), hsub.Integral()))
-                for b in range(1,hsub.GetNbinsX()*hsub.GetNbinsY()+1):
-                    hsub.SetBinContent(b,1e-6)
+                nbins_tot = hsub.GetNbinsX()*hsub.GetNbinsY()
+                if binning.is3D:
+                    nbins_tot *= hsub.GetNbinsZ()
+                for b in range(1, nbins_tot+1):
+                    hsub.SetBinContent(b, 1e-6)
             self.file.WriteObject(hsub, hsub.GetName())
 
 def _keyword_replace(df,col_strs):
