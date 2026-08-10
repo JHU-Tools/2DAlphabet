@@ -1,10 +1,29 @@
+include:
+  - project: "cms-analysis/general/container-image-ci-templates"
+    file:
+      - "kaniko-image.gitlab-ci.yml"
+      - "skopeo.gitlab-ci.yml"
+
 stages:
   - install
   - run_analysis
+  - build
+  - container_test
+  - tag
 
 variables:
   CMSSW_VERSION: "CMSSW_14_1_0_pre4"
   SCRAM_ARCH: "el9_amd64_gcc13"
+  COMBINE_TAG: "v10.0.1"
+  HARVESTER_BRANCH: "CMSSW_14_1_0_pre4"
+
+.container_rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
+      when: always
+    - when: never
 
 cmssw_install:
   stage: install
@@ -83,3 +102,51 @@ run_analysis:
       - test/CR_cicd/TprimeB-1800_16_area/plots_fit_b/postfit_proj*pdf
       - test/CR_cicd/TprimeB-1800_16_area/plots_fit_s/postfit_proj*pdf
     expire_in: 2 weeks
+
+build_image:
+  extends:
+    - .build_kaniko
+    - .container_rules
+  dependencies:
+    - cmssw_install
+  tags:
+    - cvmfs
+  variables:
+    DOCKER_FILE_NAME: "docker/Dockerfile"
+    BUILD_ARGS: "FROM_IMAGE=gitlab-registry.cern.ch/cms-cloud/cmssw-docker/al9-cms:latest CMSSW_VERSION=${CMSSW_VERSION} COMBINE_TAG=${COMBINE_TAG} HARVESTER_BRANCH=${HARVESTER_BRANCH}"
+    REGISTRY_IMAGE_PATH: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    PUSH_IMAGE: "true"
+
+test_image:
+  extends: .container_rules
+  stage: container_test
+  image:
+    name: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    entrypoint: [""]
+  tags:
+    - cvmfs
+  needs:
+    - build_image
+  before_script:
+    - source /home/cmsusr/setup_2dalphabet.sh
+  script:
+    - combine --help >/dev/null
+    - python3 -c "import ROOT; from ROOT import RooParametricHist2D; import TwoDAlphabet; print('2DAlphabet container environment ready')"
+    - cd "/home/cmsusr/${CMSSW_VERSION}/src/2DAlphabet/test"
+    - python3 test_CR.py
+
+tag_release:
+  extends: .tag_skopeo
+  needs:
+    - test_image
+  variables:
+    IMAGE_ORIGIN_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:${CMSSW_VERSION}-combine_${COMBINE_TAG}"
+
+tag_latest:
+  extends: .tag_skopeo
+  needs:
+    - test_image
+  variables:
+    IMAGE_ORIGIN_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:latest"

@@ -1,0 +1,7 @@
+.git
+twoD-env
+__pycache__
+*.pyc
+.pytest_cache
+test/CR_cicd
+test/limits_cicd.json
