@@ -23,14 +23,14 @@ cd 2DAlphabet/
 python setup.py develop
 ```
 
-## CVMFS container image (recommended for batch/grid)
+## CVMFS container image
 
 A prebuilt image containing CMSSW, Combine, CombineHarvester, and 2DAlphabet is
 available through CVMFS on supported clusters such as CERN LXPLUS and FNAL
 LPC:
 
 ```text
-/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:latest
+/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0
 ```
 
 ### Interactive shell
@@ -38,7 +38,7 @@ LPC:
 Mount the current directory at `/work` and enter the container:
 
 ```bash
-IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:latest
+IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0
 
 singularity shell \
     --bind /cvmfs \
@@ -56,13 +56,13 @@ cd /work
 
 Type `exit` to leave the container.
 
-### Run Python scripts
+### Run commands
 
-The following shell function starts the container, activates the 2DAlphabet
-environment, and runs Python from the current directory. Add it to `~/.bashrc`:
+The following shell functions start the container, activate the 2DAlphabet
+environment, and run commands from the current directory. Add them to `~/.bashrc`:
 
 ```bash
-twodalphabet_exec() {
+twod() {
     local workdir
     workdir="$(pwd -P)"
 
@@ -70,21 +70,26 @@ twodalphabet_exec() {
         --bind /cvmfs \
         --bind "${workdir}:/work" \
         --pwd /work \
-        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:latest \
-        bash -c 'source /home/cmsusr/setup_2dalphabet.sh && exec python3 "$@"' \
+        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0 \
+        bash -c 'source /home/cmsusr/setup_2dalphabet.sh && exec "$@"' \
         bash "$@"
+}
+
+twod_py() {
+    twod python3 "$@"
 }
 ```
 
-Load the function and use it to run any Python analysis in the current
-directory:
+Load the functions and use `twod_py` for Python scripts or `twod` for other
+commands provided by the image:
 
 ```bash
 source ~/.bashrc
-twodalphabet_exec my_analysis.py
+twod_py my_analysis.py
+twod root -l fitResults.root
 ```
 
-The function passes all arguments to the Python script. Files written in the
+Arguments are passed to the selected command. Files written in the
 current directory remain on the host after the container exits.
 
 ### Example control-region fit
@@ -128,7 +133,7 @@ Run the example from a clean checkout:
 
 ```bash
 cd test
-twodalphabet_exec test_CR.py
+twod_py test_CR.py
 ```
 
 A successful run ends with:
