@@ -63,7 +63,8 @@ class TwoDAlphabet:
                     threshold      = self.options.mcstats_threshold,            # Effective events threshold below which to implement per-process nuisances (default 10)
                     include_signal = self.options.mcstats_include_signal,       # Whether to implement MC stats nuisances for signal. Defaults False, since this isn't usually done.
                     excluded_procs = self.options.mcstats_exclude_processes,    # Processes for which MC statistical uncertainty should not be calculated. 
-                    alpha_min      = self.options.mcstats_alpha_min             # Threshold for alpha below which MC statistical uncertainty histograms are not generated.
+                    alpha_min      = self.options.mcstats_alpha_min,            # Threshold for alpha below which MC statistical uncertainty histograms are not generated.
+                    excluded_regions = self.options.mcstats_exclude_regions      # Regions for which MC statistical uncertainty should not be calculated.
                 )
                 if mcstat_rows:
                     self.df = pandas.concat([self.df, pandas.DataFrame(mcstat_rows)], ignore_index=True)
@@ -141,6 +142,8 @@ class TwoDAlphabet:
             help='Whether to include signal in calculation of MC statistical uncertainties. Defaults to False.')
         parser.add_argument('mcstats_exclude_processes', default=[], type=str, nargs='*',
             help='List of processes for which MC statistical uncertainty templates should not be produced. NOTE: they will still be used in the calculation of the MC statistical uncertainty for other processes.')
+        parser.add_argument('mcstats_exclude_regions', default=[], type=str, nargs='*',
+            help='List of regions for which MC statistical uncertainty templates should not be produced. Mostly useful for fail regions where they are irrelevant.')
         # Plotting
         parser.add_argument('haddSignals', default=True, type=bool, nargs='?',
             help='Combine signals into one histogram for the sake of plotting. Still treated as separate in fit. Defaults to True.')
@@ -841,7 +844,6 @@ def MakeCard(ledger, subregionMap, subtag, workspaceDir):
     # imax (bins), jmax (backgrounds+signals), kmax (systematics) 
     #imax = 3*len(ledger.GetRegions()) # pass, fail for each 'X' axis category    
     jmax = ledger.nbkgs + ledger.nsignals -1
-    kmax = len(ledger.GetShapeSystematics()) # does not include alphaParams
     imax = 0
     channels = []
     for region in ledger.GetRegions():
@@ -853,7 +855,8 @@ def MakeCard(ledger, subregionMap, subtag, workspaceDir):
         
     card_new.write('imax %s\n'%imax)      
     card_new.write('jmax %s\n'%jmax)
-    card_new.write('kmax %s\n'%kmax)
+    # Combine counts 'param' lines as systematics, so let it count.
+    card_new.write('kmax *\n')
     card_new.write('-'*120+'\n')
 
     # Shapes
