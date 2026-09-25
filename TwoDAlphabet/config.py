@@ -428,7 +428,7 @@ class OrganizedHists():
 
             infile.Close()
 
-    def AddMCStatShapes(self, df, binnings, threshold=10, include_signal=False, excluded_procs=[], alpha_min=0.1, name_prefix='mcstat', verbose=True):
+    def AddMCStatShapes(self, df, binnings, threshold=10, include_signal=False, excluded_procs=[], alpha_min=0.1, name_prefix='mcstat', verbose=True, excluded_regions=[]):
         '''
         Generate autoMCStats-style per-bin shape templates from the rebinned nominal
         background hists, write them to organized_hists.root, register
@@ -457,6 +457,8 @@ class OrganizedHists():
         # Store them in a {process: TH2} dict called `nominal`.
         # Avoid any processes specified by the user in the JSON, passed here as `excluded_procs` list.
         for region in df.region.unique():
+            if region in excluded_regions:
+                continue
             procs = list(bkg[bkg.region.eq(region) & ~bkg.process.isin(excluded_procs)].process.unique())
             if not procs:
                 # This occurs when `include_signal=False` and all MC processes are excluded. Just return. 

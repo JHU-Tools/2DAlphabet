@@ -3,6 +3,7 @@ from TwoDAlphabet.helpers import roofit_form_to_TF1
 from ROOT import RooRealVar, RooFormulaVar, RooArgList, RooParametricHist2D, RooConstVar, TFormula, RooAddition
 from TwoDAlphabet.binning import copy_hist_with_new_bins
 import itertools
+import math
 # import numpy as np
 # from numpy.lib.function_base import piecewise
 
@@ -81,7 +82,7 @@ class Generic2D(object):
         all_nuisances = self.nuisances+other.nuisances
         for nuisance in all_nuisances:
             if nuisance['name'] in [n['name'] for n in out.nuisances]:
-                raise RuntimeError('Already tracking nuisance %s. Printing all nuisances...\n\t'%(nuisance['name'],all_nuisances))
+                raise RuntimeError('Already tracking nuisance %s. All nuisances:\n\t%s'%(nuisance['name'],'\n\t'.join(n['name'] for n in all_nuisances)))
 
             out.nuisances.append(nuisance)
 
@@ -416,11 +417,13 @@ class BinnedDistribution(Generic2D):
                     if constant or self._nSurroundingZeros(cat_hist,xbin,ybin) > 7:
                         self.binVars[bin_name] = RooConstVar(bin_name, bin_name, cat_hist.GetBinContent(xbin,ybin))
                     else:
-                        self.binVars[bin_name] = RooRealVar(bin_name, bin_name, max(5,cat_hist.GetBinContent(xbin,ybin)), 1e-6, 1e6)
+                        # A flat 1e6 bound makes Minuit's bounded transform nearly flat and breaks convergence.
+                        nom =max(5,cat_hist.GetBinContent(xbin,ybin))
+                        self.binVars[bin_name] = RooRealVar(bin_name, bin_name, nom, 1e-6, max(2*nom, nom+10*math.sqrt(nom)))
                         self.nuisances.append({'name':bin_name, 'constraint':'flatParam', 'obj': self.binVars[bin_name]})
                     self._varStorage.append(self.binVars[bin_name]) # For safety if we add shape templates            
                      
-    def AddShapeTemplates(self,nuis_name,up_shape,down_shape,constraint="param 1 0"):
+    def AddShapeTemplates(self,nuis_name,up_shape,down_shape,constraint="param 0 1"):
         '''Add variation shape templates that are used to create a map between
         a new nuisance parameter (named `nuis_name`) and the values for a given bin.
         To accomodate the potential for multiple shape templates, the new parameter
@@ -446,7 +449,7 @@ class BinnedDistribution(Generic2D):
             down_shape (TH2): Input 2D histogram representing "down" variation.
             constraint (str, optional): Can only be 'flatParam' or 'param <mu> <sigma>' (options in the Combine card) 
                 which represent "no constraint" and "Gaussian constraint centered at <mu> and with width <sigma>", respectively.
-                Defaults to "param 1 0".
+                Defaults to "param 0 1".
             forcePositive (bool, optional): If True, shape template mapping will use exponentials so that values asymptotically
                 approach zero as the associated nuisance increases/decreases. If False, the mapping will be linear.
         '''
@@ -459,14 +462,19 @@ class BinnedDistribution(Generic2D):
             cat_hist_down = copy_hist_with_new_bins(down_shape.GetName()+'_'+cat,'X', down_shape, self.binning.xbinByCat[cat])
             for ybin in range(1,cat_hist_up.GetNbinsY()+1):
                 for xbin in range(1,cat_hist_up.GetNbinsX()+1):
-                    bin_name = '%s_%s_bin_%s-%s'%(cat_name,nuis_name,xbin,ybin)
-                    self.binVar[bin_name] = singleBinInterp( # change to singleBinInterpQuad to change interpolation method
-                                                bin_name, self.getBinVar(xbin,ybin,cat), nuisance_par,
+                    # Replace the bin's own entry so consumers see the morph and templates chain.
+                    bin_key = '%s_bin_%s-%s'%(cat_name,xbin,ybin)
+                    current = self.binVars[bin_key]
+                    if current.getVal() <= 0:
+                        continue
+                    self.binVars[bin_key] = singleBinInterp( # change to singleBinInterpQuad to change interpolation method
+                                                '%s_%s_bin_%s-%s'%(cat_name,nuis_name,xbin,ybin),
+                                                nuisance_par, current,
                                                 cat_hist_up.GetBinContent(xbin,ybin),
                                                 cat_hist_down.GetBinContent(xbin,ybin),
                                                 self.forcePositive
                     )
-                    self._varStorage.append(self.binVars[bin_name]) # For safety if we add more shape templates  
+                    self._varStorage.append(self.binVars[bin_key]) # For safety if we add more shape templates
 
     def KDESmooth(self):
         raise NotImplementedError()
@@ -513,16 +521,18 @@ def singleBinInterp(name, nuis, binVar, upVal, downVal, forcePositive):
     Returns:
         RooFormulaVar: New bin value which includes interpolation term.
     '''
-    activate_pos = '(1/(1 + exp(-5x)))' # Use sigmoid for activation
-    activate_neg = '(1/(1 + exp(5x)))'
+    activate_pos = '(1/(1 + exp(-5*@0)))' # Use sigmoid for activation
+    activate_neg = '(1/(1 + exp(5*@0)))'
+    nom = binVar.getVal() # getValV() fails on RooConstVar in PyROOT
+    up_ratio, down_ratio = upVal/nom, downVal/nom
     if forcePositive:
-        pos_term = '({u}^@0)'.format(u=upVal)
-        neg_term = '({d}^(-1*@0))'.format(d=downVal)
+        pos_term = '({u}^@0)'.format(u=up_ratio)
+        neg_term = '({d}^(-1*@0))'.format(d=down_ratio)
     else:
-        pos_term = '(1+({u}-1)*@0)'.format(u=upVal)
-        neg_term = '(1+(1-{d})*@0)'.format(d=downVal)
-    
-    full = '@1*({act_pos}*{pos}+{act_neg}*{neg})/{nom}'.format(act_pos=activate_pos, act_neg=activate_neg, pos=pos_term, neg=neg_term, nom=binVar.getValV())
+        pos_term = '(1+({u}-1)*@0)'.format(u=up_ratio)
+        neg_term = '(1+(1-{d})*@0)'.format(d=down_ratio)
+
+    full = '@1*({act_pos}*{pos}+{act_neg}*{neg})'.format(act_pos=activate_pos, act_neg=activate_neg, pos=pos_term, neg=neg_term)
     return RooFormulaVar(name, name, full, RooArgList(nuis,binVar))
 
 # def singleBinInterpQuad(name, nuis, binVar, upVal, downVal): # NOT USED
