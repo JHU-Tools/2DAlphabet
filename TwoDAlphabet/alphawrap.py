@@ -408,12 +408,14 @@ class BinnedDistribution(Generic2D):
                 and any shape templates will asymptotically approach zero as the associated nuisance increases/decreases.
         '''
         super(BinnedDistribution,self).__init__(name,binning,forcePositive=forcePositive)
+        self._nomContent = {} # nominal template content per bin, the reference for shape template ratios
         for cat in self.subspaces:
             cat_name = name+'_'+cat
             cat_hist = copy_hist_with_new_bins(cat_name,'X',inhist,self.binning.xbinByCat[cat])
             for ybin in range(1,cat_hist.GetNbinsY()+1):
                 for xbin in range(1,cat_hist.GetNbinsX()+1):
                     bin_name = '%s_bin_%s-%s'%(cat_name,xbin,ybin)
+                    self._nomContent[bin_name] = cat_hist.GetBinContent(xbin,ybin)
                     if constant or self._nSurroundingZeros(cat_hist,xbin,ybin) > 7:
                         self.binVars[bin_name] = RooConstVar(bin_name, bin_name, cat_hist.GetBinContent(xbin,ybin))
                     else:
@@ -464,15 +466,19 @@ class BinnedDistribution(Generic2D):
                 for xbin in range(1,cat_hist_up.GetNbinsX()+1):
                     # Replace the bin's own entry so consumers see the morph and templates chain.
                     bin_key = '%s_bin_%s-%s'%(cat_name,xbin,ybin)
-                    current = self.binVars[bin_key]
-                    if current.getVal() <= 0:
+                    nomC  = self._nomContent[bin_key]
+                    upC   = cat_hist_up.GetBinContent(xbin,ybin)
+                    downC = cat_hist_down.GetBinContent(xbin,ybin)
+                    # Ratios are taken w.r.t. the nominal template, not the bin's starting value (floated
+                    # bins start at max(5,content)). Bins without a usable ratio are left unmorphed:
+                    # with forcePositive a zero ratio gives 0^(-x) = inf.
+                    if nomC <= 0 or (self.forcePositive and (upC <= 0 or downC <= 0)):
                         continue
+                    current = self.binVars[bin_key]
                     self.binVars[bin_key] = singleBinInterp( # change to singleBinInterpQuad to change interpolation method
                                                 '%s_%s_bin_%s-%s'%(cat_name,nuis_name,xbin,ybin),
-                                                nuisance_par, current,
-                                                cat_hist_up.GetBinContent(xbin,ybin),
-                                                cat_hist_down.GetBinContent(xbin,ybin),
-                                                self.forcePositive
+                                                nuisance_par, current, upC, downC,
+                                                self.forcePositive, nomC
                     )
                     self._varStorage.append(self.binVars[bin_key]) # For safety if we add more shape templates
 
@@ -489,7 +495,7 @@ class BinnedDistribution(Generic2D):
                     nzeros += 1
         return nzeros
 
-def singleBinInterp(name, nuis, binVar, upVal, downVal, forcePositive):
+def singleBinInterp(name, nuis, binVar, upVal, downVal, forcePositive, nomVal=None):
     '''Create a RooFormulaVar containing the nuisance parameter that can
     morph the initial `binVar` value between the values of `upVal` and `downVal`.
     
@@ -518,12 +524,14 @@ def singleBinInterp(name, nuis, binVar, upVal, downVal, forcePositive):
         downVal (float): Absolute "down" variation of the bin value.
         forcePositive (bool): If True, shape template mapping will use exponentials so that values asymptotically
                 approach zero as the associated nuisance increases/decreases. If False, the mapping will be linear.
+        nomVal (float, optional): Nominal value that `upVal` and `downVal` are relative to. Defaults to the
+                current value of `binVar`.
     Returns:
         RooFormulaVar: New bin value which includes interpolation term.
     '''
     activate_pos = '(1/(1 + exp(-5*@0)))' # Use sigmoid for activation
     activate_neg = '(1/(1 + exp(5*@0)))'
-    nom = binVar.getVal() # getValV() fails on RooConstVar in PyROOT
+    nom = binVar.getVal() if nomVal is None else nomVal # getValV() fails on RooConstVar in PyROOT
     up_ratio, down_ratio = upVal/nom, downVal/nom
     if forcePositive:
         pos_term = '({u}^@0)'.format(u=up_ratio)
