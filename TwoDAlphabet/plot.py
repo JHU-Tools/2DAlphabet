@@ -26,18 +26,30 @@ class Plotter(object):
         slices (dict): Stores edges to slice "x" and "y" axes. 
         root_out (ROOT.TFile): File storing all histograms that are made.
     '''
-    def __init__(self,ledger,twoD,fittag,loadExisting=False):
+    def __init__(self,ledger,twoD,fittag,loadExisting=False,plotSlices=True,plotPrefit=False):
         '''Constructor.
 
         Args:
             twoD (TwoDAlphabet): Object with meta information about the run.
             fittag (str): Either 's' or 'b'.
             loadExisting (bool, optional): Flag to load existing projections instead of remaking everything. Defaults to False.
+            plotSlices (bool, optional): If True (default), X and Y projections are each sliced into three windows
+                                          (LOW/SIG/HIGH) of the other axis. If False, X and Y projections are instead
+                                          shown fully integrated over the other axes, matching how the Z (mjj)
+                                          projection is always handled for 3D shapes. Defaults to True.
+            plotPrefit (bool, optional): If True, also draw the pre-fit projections alongside the post-fit ones.
+                                          The pre-fit shapes are already written to all_plots.root by _make();
+                                          this only controls whether they are turned into figures. Note that
+                                          "pre-fit" is only meaningful when the background model does not rely on
+                                          a ParametricFunction transfer function, whose parameters start at
+                                          arbitrary values. Defaults to False.
         '''
 
         self.fittag = fittag
         self.twoD = twoD
         self.ledger = ledger
+        self.plotSlices = plotSlices
+        self.plotPrefit = plotPrefit
         self.yaxis1D_title = 'Events / bin'
         self.df = pandas.DataFrame(columns=['process','region','process_type','title'])
         self.dir = 'plots_fit_{f}'.format(f=self.fittag)
@@ -166,49 +178,65 @@ class Plotter(object):
                                           'title': proc_title}])], ignore_index=True)
 
                 for time in ['prefit','postfit']:
-                    # 2D distributions first
-                    out2d_name = '%s_%s_%s_2D'%(process,region,time)
+                    # 2D (or 3D) distribution first
+                    outfull_name = '%s_%s_%s_%s'%(process,region,time,'3D' if binning.is3D else '2D')
 
-                    #low_name = loc_base.format(r=region, c='LOW', t=time, p=process)
-                    #sig_name = loc_base.format(r=region, c='SIG', t=time, p=process)
-                    #high_name = loc_base.format(r=region, c='HIGH',t=time, p=process)
-                    
-                    #low  = shapes_file.Get(low_name)
-                    #sig  = shapes_file.Get(sig_name)
-                    #high = shapes_file.Get(high_name)
-
-                    #if low == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(low_name, self.fittag))
-                    #if sig == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(sig_name, self.fittag))
-                    #if high == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(high_name, self.fittag))
-
-                    #full = stitch_hists_in_x(out2d_name, binning, [low,sig,high], blinded=blinding if process == 'data_obs' else [])
                     subregion_hists = []
                     for subregion in binning.xbinByCat:
                         subregion_name = loc_base.format(r=region, c=subregion, t=time, p=process)
                         subregion_hist = shapes_file.Get(subregion_name)
                         if subregion_hist == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(subregion_name, self.fittag))
                         subregion_hists.append(subregion_hist)
-                    full = stitch_hists_in_x(out2d_name, binning, subregion_hists, blinded=blinding if process == 'data_obs' else [])
+                    full = stitch_hists_in_x(outfull_name, binning, subregion_hists, blinded=blinding if process == 'data_obs' else [])
 
                     full.SetMinimum(0)
                     full.SetTitle('%s, %s, %s'%(proc_title,region,time))
 
                     self.root_out.WriteTObject(full,full.GetName())
 
-                    # Now do projections using the 2D
+                    # Now do projections using the 2D/3D distribution.
+                    # X and Y are sliced into three windows of the other axis, exactly as in 2D,
+                    # unless options.plotSlices is False. Z (if present) has no signal-region
+                    # structure of its own, so it is always projected in full (integrated over
+                    # all of X and Y), giving a single "slice".
                     out_proj_name = '{p}_{r}_{t}_proj{x}{i}'
-                    for proj in ['X','Y']:
-                        slices = self.slices['x' if proj == 'Y' else 'y'][region]
-                        print(proj, slices)
-                        for islice in range(3):
+                    proj_axes = ['X','Y'] + (['Z'] if binning.is3D else [])
+                    plot_slices = self.plotSlices
+                    for proj in proj_axes:
+                        sliced = (proj != 'Z') and plot_slices
+                        if sliced:
+                            nslices = 3
+                            slices = self.slices['x' if proj == 'Y' else 'y'][region]
+                        else:
+                            nslices = 1
+
+                        for islice in range(nslices):
                             hname = out_proj_name.format(p=process,r=region,t=time,x=proj.lower(),i=islice)
-                            start,stop = _get_start_stop(islice,slices['idxs'])
-                            
-                            hslice = getattr(full,'Projection'+proj)(hname,start,stop,'e')
-                            hslice_title = '%s, %s, %s, %s-%s'%(proc_title,region,time,slices['vals'][islice],slices['vals'][islice+1])
+
+                            if sliced:
+                                start,stop = _get_start_stop(islice,slices['idxs'])
+                                if binning.is3D:
+                                    # TH3's ProjectionX/Y take ranges for *both* other axes;
+                                    # (0,-1) for Z means "integrate over the full Z range".
+                                    hslice = getattr(full,'Projection'+proj)(hname,start,stop,0,-1,'e')
+                                else:
+                                    hslice = getattr(full,'Projection'+proj)(hname,start,stop,'e')
+                                hslice_title = '%s, %s, %s, %s-%s'%(proc_title,region,time,slices['vals'][islice],slices['vals'][islice+1])
+                            else:
+                                start,stop = 0,-1
+                                # Integrate fully over the other axis/axes (0,-1 == all bins).
+                                if proj == 'Z':
+                                    hslice = full.ProjectionZ(hname,0,-1,0,-1,'e')
+                                elif binning.is3D:
+                                    hslice = getattr(full,'Projection'+proj)(hname,0,-1,0,-1,'e')
+                                else:
+                                    hslice = getattr(full,'Projection'+proj)(hname,0,-1,'e')
+                                hslice_title = '%s, %s, %s'%(proc_title,region,time)
+
+                            xtitle = {'X':binning.xtitle,'Y':binning.ytitle,'Z':binning.ztitle}[proj]
                             hslice = self._format_1Dhist(
                                 hslice, hslice_title,
-                                binning.xtitle if proj == 'X' else binning.ytitle,
+                                xtitle,
                                 self.yaxis1D_title,
                                 color, proc_type)
 
@@ -267,11 +295,17 @@ class Plotter(object):
         Plots are grouped based on process and then the regions and pre-fit/post-fit
         plots share the same canvas as sub-pads.
 
+        3D regions are skipped - a "lego" style plot doesn't generalize to a TH3,
+        and the 1D projections (X, Y, Z) made by plot_projections() are what matter there.
+
         Returns:
             None
         '''
         for pr, _ in self.df.groupby(['process','region']):
             process, region = pr[0], pr[1]
+            binning, _ = self.twoD.GetBinningFor(region)
+            if binning.is3D:
+                continue
             out_file_name = '{d}/base_figs/{p}_{r}_%s_2D'.format(d=self.dir,p=process,r=region)
             make_pad_2D(outname=out_file_name%('prefit'), hist=self.Get('{p}_{r}_{t}'.format(p=process,r=region,t='prefit_2D')),
                             year=self.twoD.options.year, savePDF=True, savePNG=True)
@@ -319,16 +353,26 @@ class Plotter(object):
                                             alphaBottom=(not logyFlag))
                 signals = group[group.process_type.eq('SIGNAL')]
 
-                for proj in ['postfit_projx','postfit_projy']:
-                    for islice in range(3): # 0: LOW, 1: SIG, 2: HIGH
+                fit_times = (['prefit'] if self.plotPrefit else []) + ['postfit']
+                proj_list = ['%s_proj%s'%(t,a) for t in fit_times
+                             for a in (['x','y'] + (['z'] if binning.is3D else []))]
+                for proj in proj_list:
+                    axis_letter = proj[-1] # 'x', 'y', or 'z'
+                    # Z is only ever shown fully integrated over X and Y; a single "slice". Can be changed if needed
+                    # X and Y are sliced into three windows of the other axis unless options.plotSlices is False,
+                    # in which case they are also shown fully integrated, matching Z.
+                    sliced = (axis_letter != 'z') and self.plotSlices
+                    nslices = 3 if sliced else 1
+                    for islice in range(nslices): # for x/y: 0: LOW, 1: SIG, 2: HIGH
 
                         # First, check if blinding was requested. There are several cases to be considered (saved in "blinding" variable):
                         #   0: No blinding requested
                         #   0: Blinding requested, we are plotting y-projection, and we are not plotting SIG slice (do nothing)
                         #   1: Blinding requested, we are plotting y-projection, and we are plotting SIG slice (NaN all data, remove 'Data' entry from legend)
                         #   2: Blinding requested, we are plotting x-projection (NaN all data within the sig window)
-                        if (region in self.twoD.options.blindedPlots):
-                            if ('projx' in proj):
+                        #   Z is never blinded assumed to have no signal-region window to blind. Adapt if needed
+                        if (region in self.twoD.options.blindedPlots) and (axis_letter != 'z'):
+                            if (axis_letter == 'x'):
                                 blinding = 2
                             else:
                                 if (islice == 1):
@@ -350,12 +394,15 @@ class Plotter(object):
                         these_bkgs =    [self.Get(row=ordered_bkgs.iloc[irow], hist_type=projn) for irow in range(ordered_bkgs.shape[0])]
                         these_signals = [self.Get(row=signals.iloc[irow], hist_type=sig_projn) for irow in range(signals.shape[0])]
 
-                        slice_edges = (
-                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice],
-                            binning.xtitle if 'y' in proj else binning.ytitle,
-                            self.slices['x' if 'y' in proj else 'y'][region]['vals'][islice+1],
-                        )
-                        slice_str = '%s < %s < %s'%slice_edges
+                        if not sliced:
+                            slice_str = '' # no slicing to report - fully integrated over the other axis/axes
+                        else:
+                            slice_edges = (
+                                self.slices['x' if axis_letter == 'y' else 'y'][region]['vals'][islice],
+                                binning.xtitle if axis_letter == 'y' else binning.ytitle,
+                                self.slices['x' if axis_letter == 'y' else 'y'][region]['vals'][islice+1],
+                            )
+                            slice_str = '%s < %s < %s'%slice_edges
 
                         out_pad_name = f'{self.dir}/base_figs/{projn}_{region}{"" if not logyFlag else "_logy"}'
 
@@ -388,8 +435,13 @@ class Plotter(object):
                         axes = pandas.concat([axes, pandas.DataFrame([{'ax':out_pad_name+'.png', 'region':region, 'proj':projn, 'logy':logyFlag}])], ignore_index=True)
 
         # Create a canvas with the full set of projection plots
+        proj_canvas_list = []
+        for t in (['prefit'] if self.plotPrefit else []) + ['postfit']:
+            proj_canvas_list += ['%s_projx'%t, '%s_projy'%t]
+            if axes.proj.str.contains('%s_projz'%t).any():
+                proj_canvas_list.append('%s_projz'%t)
         for logy in ['', '_logy']:
-            for proj in ['postfit_projx','postfit_projy']:
+            for proj in proj_canvas_list:
                 these_axes = axes.loc[axes.proj.str.contains(proj)]
                 if logy == '':
                     these_axes = these_axes.loc[these_axes.logy.eq(False)]
@@ -524,8 +576,10 @@ def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', 
             if cat != "Region0":
                 edges += xbins[cat][1:]
         edges = np.array(edges)
-    else:
+    elif projn == 'y':
         edges = np.array(binning.ybinList)
+    else: # 'z'
+        edges = np.array(binning.zbinList)
     widths = np.diff(edges)     # obtain bin widths
 
     # Convert all unique bkg and signal hists to arrays and group by process. They will come already ordered, so keep the ordering
@@ -653,7 +707,7 @@ def make_ax_1D(outname, binning, blinding, data, bkgs=[], signals=[], title='', 
     # Set up ratio plot axis
     rax.set_ylim(-3,3)
     rax.set_ylabel(r'$\frac{Data-Bkg}{\sigma}$')
-    axisTitle = binning.xtitle if projn == 'x' else binning.ytitle
+    axisTitle = {'x':binning.xtitle, 'y':binning.ytitle, 'z':binning.ztitle}[projn]
     axisTitle = axisTitle.replace("#","\\")
     rax.set_xlabel(r'${}$ [{}]'.format(axisTitle, units))
     rax.autoscale(axis='x', tight=True)
@@ -729,8 +783,8 @@ def _get_start_stop(i,slice_idxs):
     stop  = slice_idxs[i+1]
     return start, stop
 
-def gen_projections(ledger, twoD, fittag, loadExisting=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[]):
-    plotter = Plotter(ledger, twoD, fittag, loadExisting)
+def gen_projections(ledger, twoD, fittag, loadExisting=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[], plotSlices=True, plotPrefit=False):
+    plotter = Plotter(ledger, twoD, fittag, loadExisting, plotSlices=plotSlices, plotPrefit=plotPrefit)
     plotter.plot_2D_distributions()
     plotter.plot_projections(lumiText, extraText, subtitles, units, regionsToGroup)
 
@@ -877,7 +931,8 @@ def save_post_fit_parametric_vals():
 
     fit_result_file.Close()
 
-def gen_post_fit_shapes():
+def gen_post_fit_shapes(is3D=False):
+    tool = 'PostFit3DShapesFromWorkspace' if is3D else 'PostFit2DShapesFromWorkspace'
     fit_result_file = ROOT.TFile.Open('fitDiagnosticsTest.root')
     goodFitTags = _get_good_fit_results(fit_result_file)
     for t in goodFitTags:
@@ -885,7 +940,7 @@ def gen_post_fit_shapes():
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.root'
         else:
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.123456.root'
-        shapes_cmd = 'PostFit2DShapesFromWorkspace -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print > PostFitShapes2D_stderr_{t}.txt'.format(t=t,w=workspace_file)
+        shapes_cmd = '{tool} -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print > PostFitShapes_stderr_{t}.txt'.format(tool=tool,t=t,w=workspace_file)
         execute_cmd(shapes_cmd)
     fit_result_file.Close()
 
