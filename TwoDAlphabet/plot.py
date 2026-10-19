@@ -4,6 +4,7 @@ from PIL import Image
 from collections import OrderedDict
 from TwoDAlphabet.helpers import set_hist_maximums, execute_cmd, cd, hist2array
 from TwoDAlphabet.binning import stitch_hists_in_x, convert_to_events_per_unit, get_min_bin_width
+from TwoDAlphabet.sampledev import load_sample_deviations, set_projection_errors
 from TwoDAlphabet.ext import tdrstyle, CMS_lumi
 from TwoDAlphabet.plotstyle import * # dictionaries containing plotting styles for mplhep
 import numpy as np
@@ -188,6 +189,11 @@ class Plotter(object):
                         if subregion_hist == None: raise IOError('Could not find histogram %s in postfitshapes_%s.root'%(subregion_name, self.fittag))
                         subregion_hists.append(subregion_hist)
                     full = stitch_hists_in_x(outfull_name, binning, subregion_hists, blinded=blinding if process == 'data_obs' else [])
+                    # Per-sample deviations, if the shapes were made with
+                    # --sample-deviations. None -> keep ROOT's quadrature errors.
+                    devs = load_sample_deviations(
+                        shapes_file, loc_base, region, binning.xbinByCat, time, process, binning,
+                        blinded=blinding if process == 'data_obs' else [])
 
                     full.SetMinimum(0)
                     full.SetTitle('%s, %s, %s'%(proc_title,region,time))
@@ -232,6 +238,12 @@ class Plotter(object):
                                 else:
                                     hslice = getattr(full,'Projection'+proj)(hname,0,-1,'e')
                                 hslice_title = '%s, %s, %s'%(proc_title,region,time)
+
+                            # ROOT's Projection sums the per-bin errors in quadrature,
+                            # i.e. as if the bins were uncorrelated. Redo them from the
+                            # samples, which carry the correlations.
+                            if devs is not None:
+                                set_projection_errors(hslice, devs, proj, start, stop)
 
                             xtitle = {'X':binning.xtitle,'Y':binning.ytitle,'Z':binning.ztitle}[proj]
                             hslice = self._format_1Dhist(
@@ -940,7 +952,10 @@ def gen_post_fit_shapes(is3D=False):
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.root'
         else:
             workspace_file = 'higgsCombineTest.FitDiagnostics.mH120.123456.root'
-        shapes_cmd = '{tool} -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print > PostFitShapes_stderr_{t}.txt'.format(tool=tool,t=t,w=workspace_file)
+        # --sample-deviations is 3D-only and costs nothing measurable; it is what
+        # lets the projections below carry bin-to-bin correlations.
+        dev_opt = ' --sample-deviations' if is3D else ''
+        shapes_cmd = '{tool} -w {w} --output postfitshapes_{t}.root -f fitDiagnosticsTest.root:fit_{t} --postfit --samples 100 --print{d} > PostFitShapes_stderr_{t}.txt'.format(tool=tool,t=t,w=workspace_file,d=dev_opt)
         execute_cmd(shapes_cmd)
     fit_result_file.Close()
 
