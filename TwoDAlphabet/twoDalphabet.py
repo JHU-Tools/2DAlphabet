@@ -363,7 +363,7 @@ class TwoDAlphabet:
             # systematic_analyzer_cmd = 'python $CMSSW_BASE/src/HiggsAnalysis/CombinedLimit/test/systematicsAnalyzer.py card.txt --all -f html > systematics_table.html'
             # execute_cmd(systematic_analyzer_cmd)    
 
-    def StdPlots(self, subtag, ledger=None, plotSplusB=True, vtol=0.3, stol=0.1, vtol2=2.0, stol2=0.5, regex='^(?!.*(_bin_|_par))', corrthresh=0.0, corrtext=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[]):
+    def StdPlots(self, subtag, ledger=None, plotSplusB=True, vtol=0.3, stol=0.1, vtol2=2.0, stol2=0.5, regex='^(?!.*(_bin_|_par))', corrthresh=0.0, corrtext=False, lumiText=r'138 $fb^{-1}$ (13 TeV)', extraText='Preliminary', subtitles={}, units='GeV', regionsToGroup=[], plotSlices=True, plotPrefit=False):
         '''
         Args:
             subtag (str): 'b' or 's' to denote background-only or signal-plus-background fit result.
@@ -400,6 +400,15 @@ class TwoDAlphabet:
                     [['CR'], ['SR'], ['SR_fail','SR_pass','CR_pass']]
                 The order matters if the sub-list contains multiple strings - the regions are plotted in order
                 with the first on top and last on bottom of the canvas.
+            plotSlices (bool): If True (default), X and Y projections are each sliced into three windows
+                                (LOW/SIG/HIGH) of the other axis, as in the original 2D behavior. If False,
+                                X and Y projections are instead shown fully integrated over the other axes -
+                                matching how the Z (mjj) projection is always handled for 3D shapes.
+            plotPrefit (bool): If True, also produce the pre-fit projections (nuisances at their initial
+                                values, i.e. the raw input templates) next to the post-fit ones, as
+                                prefit_proj{x,y,z}.pdf. Defaults to False. Only meaningful when the
+                                background model does not use a ParametricFunction transfer function,
+                                whose parameters have no meaningful pre-fit value.
 
         Returns:
             None
@@ -415,10 +424,10 @@ class TwoDAlphabet:
                 threshold=corrthresh,
                 corrText=False
             )
-            plot.gen_post_fit_shapes()
-            plot.gen_projections(ledger=ledger, twoD=self, fittag='b', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup)
+            plot.gen_post_fit_shapes(is3D=any(b.is3D for b in self.binnings.values()))
+            plot.gen_projections(ledger=ledger, twoD=self, fittag='b', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup, plotSlices=plotSlices, plotPrefit=plotPrefit)
             if plotSplusB:
-                plot.gen_projections(ledger=ledger, twoD=self, fittag='s', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup)
+                plot.gen_projections(ledger=ledger, twoD=self, fittag='s', lumiText=lumiText, extraText=extraText, subtitles=subtitles, units=units, regionsToGroup=regionsToGroup, plotSlices=plotSlices, plotPrefit=plotPrefit)
             
     def GetParamsOnMatch(self, regex='', subtag='', b_or_s='b'):
         out = {}
