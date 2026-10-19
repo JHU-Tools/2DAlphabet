@@ -8,20 +8,29 @@ The `master` branch of 2DAlphabet is built for el9, corresponding to the followi
 cmsrel CMSSW_14_1_0_pre4
 cd CMSSW_14_1_0_pre4/src
 cmsenv
-git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
-cd HiggsAnalysis/CombinedLimit
-git fetch origin
-git checkout v10.0.1
-cd ../../
-git clone --branch CMSSW_14_1_0_pre4 git@github.com:JHU-Tools/CombineHarvester.git
+git clone --branch v10.0.1-jhu-2d.1 https://gitlab.cern.ch/jhu-tools/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
+git clone --branch v4.0.0-jhu-2d.1 https://gitlab.cern.ch/jhu-tools/combineharvester.git CombineHarvester
 scramv1 b clean
 scramv1 b -j 16
-git clone git@github.com:JHU-Tools/2DAlphabet.git
+git clone --branch v2.1 https://gitlab.cern.ch/jhu-tools/2DAlphabet.git
 python3 -m virtualenv twoD-env
 source twoD-env/bin/activate
 cd 2DAlphabet/
 python setup.py develop
 ```
+
+### Versions
+Each 2DAlphabet release is pinned to frozen tags of the jhu-tools forks of Combine and
+CombineHarvester. The forks are upstream plus fixes that 2DAlphabet needs: Combine adds the
+fix for morphing templates in workspace copies (cms-analysis/HiggsAnalysis-CombinedLimit#1267),
+CombineHarvester adds `--sample-deviations` (cms-analysis/CombineHarvester#347). The `-3d`
+releases are built from the `3DAlphabet` branch and add 3D (TH3) template support.
+
+| 2DAlphabet | Combine (jhu-tools) | CombineHarvester (jhu-tools) | Container image |
+|---|---|---|---|
+| `v2.1` | `v10.0.1-jhu-2d.1` | `v4.0.0-jhu-2d.1` | `2dalphabet:v2.1` |
+| `v2.1-3d` | `v10.0.1-jhu-3d.1` | `v4.0.0-jhu-3d.1` | `2dalphabet:v2.1-3d` |
+| `v2.0` | `v10.0.1` (upstream) | GitHub JHU-Tools branch `CMSSW_14_1_0_pre4` | `2dalphabet:v2.0` |
 
 ## CVMFS container image
 
@@ -30,7 +39,7 @@ available through CVMFS on supported clusters such as CERN LXPLUS and FNAL
 LPC:
 
 ```text
-/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0
+/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1
 ```
 
 ### Interactive shell
@@ -38,7 +47,7 @@ LPC:
 Mount the current directory at `/work` and enter the container:
 
 ```bash
-IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0
+IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1
 
 singularity shell \
     --bind /cvmfs \
@@ -70,7 +79,7 @@ twod() {
         --bind /cvmfs \
         --bind "${workdir}:/work" \
         --pwd /work \
-        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.0 \
+        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1 \
         bash -c 'source /home/cmsusr/setup_2dalphabet.sh && exec "$@"' \
         bash "$@"
 }

@@ -14,8 +14,9 @@ stages:
 variables:
   CMSSW_VERSION: "CMSSW_14_1_0_pre4"
   SCRAM_ARCH: "el9_amd64_gcc13"
-  COMBINE_TAG: "v10.0.1"
-  HARVESTER_BRANCH: "CMSSW_14_1_0_pre4"
+  # Frozen jhu-tools tags of Combine and CombineHarvester (see the version table in README.md)
+  COMBINE_TAG: "v10.0.1-jhu-2d.1"
+  HARVESTER_TAG: "v4.0.0-jhu-2d.1"
 
 .container_rules:
   rules:
@@ -46,12 +47,8 @@ cmssw_install:
     - cd ${CMSSW_VERSION}/src
     - eval `scramv1 runtime -sh`
 
-    - git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
-    - cd HiggsAnalysis/CombinedLimit
-    - git fetch origin
-    - git checkout v10.0.1
-    - cd ../../
-    - git clone --branch CMSSW_14_1_0_pre4 https://github.com/JHU-Tools/CombineHarvester.git
+    - git clone --depth 1 --branch ${COMBINE_TAG} https://gitlab.cern.ch/jhu-tools/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
+    - git clone --depth 1 --branch ${HARVESTER_TAG} https://gitlab.cern.ch/jhu-tools/combineharvester.git CombineHarvester
     - scramv1 b clean
     - scramv1 b -j 16
 
@@ -117,7 +114,7 @@ build_image:
     - cvmfs
   variables:
     DOCKER_FILE_NAME: "docker/Dockerfile"
-    BUILD_ARGS: "FROM_IMAGE=gitlab-registry.cern.ch/cms-cloud/cmssw-docker/al9-cms:latest CMSSW_VERSION=${CMSSW_VERSION} COMBINE_TAG=${COMBINE_TAG} HARVESTER_BRANCH=${HARVESTER_BRANCH}"
+    BUILD_ARGS: "FROM_IMAGE=gitlab-registry.cern.ch/cms-cloud/cmssw-docker/al9-cms:latest CMSSW_VERSION=${CMSSW_VERSION} COMBINE_TAG=${COMBINE_TAG} HARVESTER_TAG=${HARVESTER_TAG}"
     REGISTRY_IMAGE_PATH: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
     PUSH_IMAGE: "true"
 

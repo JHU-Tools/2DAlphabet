@@ -5,7 +5,7 @@ SHELL ["/bin/bash", "-c"]
 
 ARG CMSSW_VERSION
 ARG COMBINE_TAG
-ARG HARVESTER_BRANCH
+ARG HARVESTER_TAG
 
 USER cmsusr
 WORKDIR /home/cmsusr
@@ -20,7 +20,7 @@ COPY --chown=cmsusr:cmsusr docker/setup.sh /home/cmsusr/setup_2dalphabet.sh
 
 ENV CMSSW_VERSION=${CMSSW_VERSION}
 ENV COMBINE_TAG=${COMBINE_TAG}
-ENV HARVESTER_BRANCH=${HARVESTER_BRANCH}
+ENV HARVESTER_TAG=${HARVESTER_TAG}
 ENV TWODALPHABET_PATH=/home/cmsusr/${CMSSW_VERSION}/src/2DAlphabet
 ENV PATH=/home/cmsusr/.local/bin:${PATH}
 
