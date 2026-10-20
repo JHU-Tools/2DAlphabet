@@ -136,21 +136,13 @@ test_image:
     - cd "/home/cmsusr/${CMSSW_VERSION}/src/2DAlphabet/test"
     - python3 test_CR.py
 
-tag_release:
+tag_master:
   extends: .tag_skopeo
   needs:
     - test_image
   variables:
     IMAGE_ORIGIN_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:${CMSSW_VERSION}-combine_${COMBINE_TAG}"
-
-tag_latest:
-  extends: .tag_skopeo
-  needs:
-    - test_image
-  variables:
-    IMAGE_ORIGIN_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:latest"
+    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:master"
 
 tag_version:
   extends: .tag_skopeo
