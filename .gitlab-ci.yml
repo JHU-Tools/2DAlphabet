@@ -15,8 +15,8 @@ variables:
   CMSSW_VERSION: "CMSSW_14_1_0_pre4"
   SCRAM_ARCH: "el9_amd64_gcc13"
   # Frozen jhu-tools tags of Combine and CombineHarvester (see the version table in README.md)
-  COMBINE_TAG: "v10.0.1-jhu-2d.1"
-  HARVESTER_TAG: "v4.0.0-jhu-2d.1"
+  COMBINE_TAG: "v10.0.1-jhu-3d.1"
+  HARVESTER_TAG: "v4.0.0-jhu-3d.1"
 
 .container_rules:
   rules:
@@ -133,16 +133,10 @@ test_image:
   script:
     - combine --help >/dev/null
     - python3 -c "import ROOT; from ROOT import RooParametricHist2D; import TwoDAlphabet; print('2DAlphabet container environment ready')"
+    - python3 -c "from ROOT import RooParametricHist3D, FastVerticalInterpHistPdf3D; print('3D classes ready')"
+    - which PostFit3DShapesFromWorkspace
     - cd "/home/cmsusr/${CMSSW_VERSION}/src/2DAlphabet/test"
     - python3 test_CR.py
-
-tag_master:
-  extends: .tag_skopeo
-  needs:
-    - test_image
-  variables:
-    IMAGE_ORIGIN_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    IMAGE_DESTINATION_TAG: "${CI_REGISTRY_IMAGE}:master"
 
 tag_version:
   extends: .tag_skopeo

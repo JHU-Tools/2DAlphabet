@@ -1,18 +1,18 @@
 # 2DAlphabet 
 2DAlphabet - A framework for performing 2D binned-likelihood fits with one background source derived from a parametric transfer function.
 # Installation instructions
-The `master` branch of 2DAlphabet is built for el9, corresponding to the following clusters:
+This is the `3DAlphabet` branch: 2DAlphabet plus 3D (TH3) template support. The `master` branch of 2DAlphabet is built for el9, corresponding to the following clusters:
 * FNAL LPC: `cmslpc-el9.fnal.gov`
 * CERN LXPLUS: `lxplus9.cern.ch`
 ```
 cmsrel CMSSW_14_1_0_pre4
 cd CMSSW_14_1_0_pre4/src
 cmsenv
-git clone --branch v10.0.1-jhu-2d.1 https://gitlab.cern.ch/jhu-tools/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
-git clone --branch v4.0.0-jhu-2d.1 https://gitlab.cern.ch/jhu-tools/combineharvester.git CombineHarvester
+git clone --branch v10.0.1-jhu-3d.1 https://gitlab.cern.ch/jhu-tools/HiggsAnalysis-CombinedLimit.git HiggsAnalysis/CombinedLimit
+git clone --branch v4.0.0-jhu-3d.1 https://gitlab.cern.ch/jhu-tools/combineharvester.git CombineHarvester
 scramv1 b clean
 scramv1 b -j 16
-git clone --branch v2.1 https://gitlab.cern.ch/jhu-tools/2DAlphabet.git
+git clone --branch v2.1-3d https://gitlab.cern.ch/jhu-tools/2DAlphabet.git
 python3 -m virtualenv twoD-env
 source twoD-env/bin/activate
 cd 2DAlphabet/
@@ -39,7 +39,7 @@ available through CVMFS on supported clusters such as CERN LXPLUS and FNAL
 LPC:
 
 ```text
-/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1
+/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1-3d
 ```
 
 ### Interactive shell
@@ -47,7 +47,7 @@ LPC:
 Mount the current directory at `/work` and enter the container:
 
 ```bash
-IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1
+IMAGE=/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1-3d
 
 singularity shell \
     --bind /cvmfs \
@@ -79,7 +79,7 @@ twod() {
         --bind /cvmfs \
         --bind "${workdir}:/work" \
         --pwd /work \
-        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1 \
+        /cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/jhu-tools/2dalphabet:v2.1-3d \
         bash -c 'source /home/cmsusr/setup_2dalphabet.sh && exec "$@"' \
         bash "$@"
 }
